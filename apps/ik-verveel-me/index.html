@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Ik Verveel Me</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:#fef9e7; min-height:100vh; color:#1a1a1a; padding-bottom:80px; }
+.hero { background: repeating-linear-gradient(45deg, #ffd54f 0 20px, #1a1a1a 20px 40px); padding:24px 16px 18px; text-align:center; position:relative; }
+.hero-inner { background:#ffd54f; border:4px solid #1a1a1a; padding:18px; margin:0 auto; max-width:560px; transform:rotate(-1deg); box-shadow:6px 6px 0 #1a1a1a; }
+.hero-title { font-size:clamp(28px, 7vw, 44px); font-weight:900; letter-spacing:-0.5px; line-height:1; text-transform:uppercase; }
+.hero-sub { font-size:13px; margin-top:6px; font-weight:600; opacity:0.7; }
+.settings { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; padding:10px 12px; max-width:640px; margin:0 auto; align-items:center; }
+.age-pick { display:flex; gap:0; border:2px solid #1a1a1a; border-radius:20px; overflow:hidden; background:white; }
+.age-pick button { padding:6px 12px; border:none; background:white; font-size:12px; font-weight:700; cursor:pointer; }
+.age-pick button.on { background:#1a1a1a; color:#ffd54f; }
+.mute-btn { width:36px; height:36px; border:2px solid #1a1a1a; border-radius:50%; background:white; cursor:pointer; font-size:18px; }
+.mute-btn.muted { background:#ff5e3a; color:white; }
+.daily { background:#9c27ff; color:white; border:3px solid #1a1a1a; box-shadow:4px 4px 0 #1a1a1a; padding:12px 16px; margin:8px 12px; max-width:616px; margin-left:auto; margin-right:auto; border-radius:14px; cursor:pointer; display:flex; align-items:center; gap:10px; }
+.daily-emo { font-size:24px; flex-shrink:0; }
+.daily-label { font-size:11px; opacity:0.85; text-transform:uppercase; letter-spacing:1px; font-weight:700; }
+.daily-act { font-weight:800; font-size:15px; line-height:1.2; }
+.tabs { display:flex; gap:4px; padding:6px 12px 12px; max-width:640px; margin:0 auto; overflow-x:auto; }
+.tab { flex:1; min-width:80px; padding:12px 8px; background:white; border:2px solid #1a1a1a; border-radius:12px; font-size:13px; font-weight:700; cursor:pointer; text-align:center; transition:all 0.15s; }
+.tab.active { background:#1a1a1a; color:#ffd54f; transform:translateY(-2px); box-shadow:3px 3px 0 #ffd54f; }
+.tab:active { transform:scale(0.96); }
+.tab-emoji { display:block; font-size:22px; margin-bottom:2px; }
+.panel { max-width:640px; margin:0 auto; padding:12px 16px; display:none; }
+.panel.active { display:block; }
+.card { background:white; border:3px solid #1a1a1a; border-radius:16px; padding:18px; margin-bottom:14px; box-shadow:4px 4px 0 #1a1a1a; }
+.card h2 { font-size:22px; margin-bottom:8px; font-weight:900; }
+.card p { font-size:14px; line-height:1.5; opacity:0.85; }
+.wheel-wrap { display:flex; flex-direction:column; align-items:center; }
+.wheel-stage { position:relative; width:min(320px, 90vw); aspect-ratio:1; margin:16px 0; }
+#wheel { width:100%; height:100%; border-radius:50%; border:4px solid #1a1a1a; box-shadow:6px 6px 0 #1a1a1a; transition:transform 4s cubic-bezier(0.17, 0.67, 0.15, 0.99); }
+.pointer { position:absolute; top:-10px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:18px solid transparent; border-right:18px solid transparent; border-top:30px solid #1a1a1a; z-index:2; }
+.spin-btn { background:#1a1a1a; color:#ffd54f; padding:14px 36px; border:none; border-radius:30px; font-size:18px; font-weight:900; cursor:pointer; box-shadow:4px 4px 0 #ffd54f; }
+.spin-btn:active { transform:translate(2px, 2px); box-shadow:2px 2px 0 #ffd54f; }
+.spin-btn:disabled { opacity:0.5; cursor:not-allowed; }
+.wheel-result { background:#ffd54f; border:3px solid #1a1a1a; padding:14px; margin-top:16px; border-radius:12px; font-size:18px; font-weight:800; text-align:center; min-height:56px; display:flex; align-items:center; justify-content:center; }
+.wheel-result.pop { animation:pop 0.7s cubic-bezier(.18,.89,.32,1.28); }
+@keyframes pop { 0% { transform:scale(0.5); opacity:0; } 60% { transform:scale(1.15); } 100% { transform:scale(1); opacity:1; } }
+.confetti { position:fixed; pointer-events:none; top:0; left:0; width:100%; height:100%; z-index:99; overflow:hidden; }
+.confetti span { position:absolute; width:10px; height:10px; opacity:0.9; animation:fall 1.6s linear forwards; }
+@keyframes fall { 0% { transform:translateY(-10vh) rotate(0); } 100% { transform:translateY(110vh) rotate(720deg); } }
+.wheel-items-list { margin-top:16px; }
+.wheel-item-row { display:flex; gap:8px; align-items:center; padding:6px 0; }
+.wheel-item-row input { flex:1; padding:8px 12px; border:2px solid #1a1a1a; border-radius:8px; font-size:14px; }
+.wheel-item-row button { background:#ff5e3a; color:white; border:2px solid #1a1a1a; border-radius:8px; padding:6px 12px; cursor:pointer; font-weight:700; }
+.add-btn { background:#9c27ff; color:white; padding:10px 18px; border:2px solid #1a1a1a; border-radius:10px; font-weight:700; cursor:pointer; box-shadow:3px 3px 0 #1a1a1a; }
+.q-num { background:#ffd54f; color:#1a1a1a; display:inline-block; padding:2px 10px; border:2px solid #1a1a1a; border-radius:20px; font-weight:800; font-size:12px; margin-bottom:8px; }
+.q-text { font-size:20px; font-weight:800; margin-bottom:16px; line-height:1.2; }
+.q-options { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.q-opt { background:white; border:3px solid #1a1a1a; padding:18px; border-radius:14px; font-size:16px; font-weight:700; cursor:pointer; text-align:center; box-shadow:3px 3px 0 #1a1a1a; transition:all 0.1s; }
+.q-opt:active, .q-opt.selected { background:#1a1a1a; color:#ffd54f; transform:translate(2px, 2px); box-shadow:1px 1px 0 #1a1a1a; }
+.q-opt-emoji { display:block; font-size:32px; margin-bottom:6px; }
+.q-progress { height:8px; background:#fff; border:2px solid #1a1a1a; border-radius:4px; overflow:hidden; margin-bottom:14px; }
+.q-progress-fill { height:100%; background:#9c27ff; transition:width 0.3s; }
+.q-done { text-align:center; }
+.q-done h3 { font-size:24px; margin-bottom:8px; }
+.tip { display:flex; gap:12px; align-items:flex-start; padding:14px; background:white; border:2px solid #1a1a1a; border-radius:12px; margin-bottom:8px; box-shadow:3px 3px 0 #1a1a1a; }
+.tip-icon { font-size:28px; flex-shrink:0; }
+.tip-text { font-size:14px; line-height:1.4; }
+.tip-text b { font-weight:800; }
+.act-filter { background:#9c27ff; color:white; padding:10px 16px; border:2px solid #1a1a1a; border-radius:20px; font-size:13px; font-weight:700; display:inline-block; margin:4px 4px 0 0; cursor:pointer; }
+.act-filter.off { background:white; color:#1a1a1a; }
+.activity { padding:14px; background:white; border:2px solid #1a1a1a; border-radius:12px; margin-bottom:8px; box-shadow:3px 3px 0 #1a1a1a; position:relative; }
+.activity.custom { background:#fff3e0; }
+.activity .del { position:absolute; top:8px; right:8px; background:#ff5e3a; color:white; border:none; border-radius:50%; width:22px; height:22px; cursor:pointer; font-weight:700; font-size:12px; }
+.activity-title { font-weight:800; font-size:15px; margin-bottom:4px; padding-right:24px; }
+.activity-tags { display:flex; flex-wrap:wrap; gap:4px; }
+.activity-tag { background:#fef9e7; padding:2px 8px; border-radius:8px; font-size:11px; font-weight:600; border:1px solid #1a1a1a; }
+.empty { text-align:center; padding:24px; opacity:0.6; }
+.warn-strip { background:repeating-linear-gradient(45deg, #ffd54f 0 10px, #1a1a1a 10px 20px); height:8px; margin:14px 0; border-radius:4px; }
+.add-form { background:#fef9e7; border:2px dashed #1a1a1a; border-radius:12px; padding:14px; margin-bottom:14px; }
+.add-form input { width:100%; padding:10px; border:2px solid #1a1a1a; border-radius:8px; margin-bottom:10px; font-size:14px; }
+.add-form .tag-pick { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:10px; }
+.add-form .tag-pick span { padding:4px 10px; border:2px solid #1a1a1a; border-radius:12px; font-size:11px; font-weight:600; cursor:pointer; background:white; }
+.add-form .tag-pick span.on { background:#1a1a1a; color:#ffd54f; }
+.poster-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:100; display:none; align-items:center; justify-content:center; padding:20px; }
+.poster-overlay.show { display:flex; }
+.poster-box { background:white; border-radius:16px; padding:14px; max-width:90vw; max-height:90vh; overflow:auto; text-align:center; }
+.poster-box svg { width:100%; max-width:400px; height:auto; display:block; margin-bottom:12px; }
+.poster-box button { margin:4px; }
+@media (max-width:480px) { .q-options { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-inner">
+    <div class="hero-title">⚠ Verboden te Vervelen ⚠</div>
+    <div class="hero-sub">Vanaf nu doe je iets leuks.</div>
+  </div>
+</div>
+
+<div class="settings">
+  <div class="age-pick" id="age-pick">
+    <button data-a="kinderen">Kinderen</button>
+    <button data-a="tieners" class="on">Tieners</button>
+    <button data-a="volwassenen">Volwassen</button>
+  </div>
+  <button class="mute-btn" id="mute-btn" title="Geluid aan/uit">🔊</button>
+</div>
+
+<div class="daily" id="daily-banner">
+  <span class="daily-emo">⚡</span>
+  <div>
+    <div class="daily-label">Vandaag's uitdaging</div>
+    <div class="daily-act" id="daily-act">…</div>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" data-tab="wheel"><span class="tab-emoji">🎡</span>Rad</button>
+  <button class="tab" data-tab="quiz"><span class="tab-emoji">❓</span>Vragen</button>
+  <button class="tab" data-tab="tips"><span class="tab-emoji">💡</span>Tips</button>
+  <button class="tab" data-tab="list"><span class="tab-emoji">📋</span>Lijst</button>
+</div>
+
+<div class="panel active" id="panel-wheel">
+  <div class="card">
+    <h2>🎡 Het Rad</h2>
+    <p>Geef het rad een draai en doe wat het zegt. Geen smoesjes.</p>
+    <div class="wheel-wrap">
+      <div class="wheel-stage">
+        <div class="pointer"></div>
+        <svg id="wheel" viewBox="0 0 200 200"></svg>
+      </div>
+      <button class="spin-btn" id="spin-btn">Draai!</button>
+      <div class="wheel-result" id="wheel-result">Druk op draai...</div>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Wat staat er op het rad?</h2>
+    <p>Voeg eigen ideeën toe of haal er weg. Min. 2, max. 12.</p>
+    <div class="wheel-items-list" id="wheel-items-list"></div>
+    <button class="add-btn" id="add-wheel-item">+ Eigen idee toevoegen</button>
+  </div>
+</div>
+
+<div class="panel" id="panel-quiz">
+  <div class="card">
+    <h2>❓ Vind jij voetbal of hockey leuker?</h2>
+    <p>Beantwoord een paar vragen. Dan weet ik wat bij jou past.</p>
+    <div class="warn-strip"></div>
+    <div class="q-progress"><div class="q-progress-fill" id="q-progress-fill"></div></div>
+    <div id="quiz-content"></div>
+  </div>
+</div>
+
+<div class="panel" id="panel-tips">
+  <div class="card">
+    <h2>💡 Tips om je nooit meer te vervelen</h2>
+    <p>Niet van mij. Van mensen die het weten.</p>
+    <button class="add-btn" id="poster-btn" style="margin-top:10px;">📄 Download poster</button>
+  </div>
+  <div id="tips-list"></div>
+</div>
+
+<div class="panel" id="panel-list">
+  <div class="card">
+    <h2>📋 Dingen om te doen</h2>
+    <p>Klik op een filter om de lijst kleiner te maken.</p>
+    <div id="act-filters"></div>
+    <div class="warn-strip"></div>
+    <button class="add-btn" id="show-add-act" style="margin-bottom:10px;">+ Eigen activiteit</button>
+    <div class="add-form" id="add-act-form" style="display:none;">
+      <input type="text" id="new-act-name" placeholder="Wat doe je?" maxlength="50">
+      <div class="tag-pick" id="new-act-tags"></div>
+      <button class="add-btn" id="save-new-act">Opslaan</button>
+      <button class="add-btn" style="background:#ff5e3a;" id="cancel-new-act">Annuleer</button>
+    </div>
+    <div id="activities-list"></div>
+  </div>
+</div>
+
+<div class="poster-overlay" id="poster-overlay">
+  <div class="poster-box">
+    <svg id="poster-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500"></svg>
+    <button class="add-btn" id="download-poster">⬇ Download SVG</button>
+    <button class="add-btn" style="background:#ff5e3a;" id="close-poster">Sluiten</button>
+  </div>
+</div>
+
+<script id="app">
+"use strict";
+
+const DEFAULT_WHEEL = ["Ga naar buiten","Bel een vriend","Bouw iets","Lees 10 minuten","Maak iets schoon","Dansen op je favoriete nummer","Probeer een nieuw recept","Ga wandelen"];
+
+const QUIZ = [
+  {q:"Wat doe je liever?", a:[{t:"Binnen blijven",v:"binnen",e:"🏠"},{t:"Naar buiten",v:"buiten",e:"🌳"}], dim:"venue"},
+  {q:"Wat klinkt beter?", a:[{t:"In m'n eentje",v:"alleen",e:"🧘"},{t:"Met anderen",v:"samen",e:"👥"}], dim:"social"},
+  {q:"Voetbal of hockey?", a:[{t:"Voetbal",v:"actief",e:"⚽"},{t:"Hockey",v:"actief",e:"🏑"}], dim:"sport_skip"},
+  {q:"Welke is leuker?", a:[{t:"Iets maken",v:"creatief",e:"🎨"},{t:"Iets sporten",v:"actief",e:"🏃"}], dim:"energy"},
+  {q:"Hoeveel tijd heb je?", a:[{t:"Even (10 min)",v:"kort",e:"⏱️"},{t:"Heel lang",v:"lang",e:"⏳"}], dim:"time"},
+  {q:"Vandaag voel ik:", a:[{t:"Energiek",v:"actief",e:"⚡"},{t:"Rustig",v:"rustig",e:"☁️"}], dim:"energy"},
+  {q:"Liever:", a:[{t:"Tekenen",v:"creatief",e:"✏️"},{t:"Rennen",v:"actief",e:"🏃‍♂️"}], dim:"creative"},
+  {q:"Buiten is het:", a:[{t:"Lekker weer",v:"buiten",e:"☀️"},{t:"Niet fijn",v:"binnen",e:"🌧️"}], dim:"venue"}
+];
+
+const TIPS = [
+  {i:"📱",t:"<b>Leg je telefoon weg.</b> Eerst 10 minuten. Vaak verveel je je dan niet meer."},
+  {i:"📝",t:"<b>Maak een lijst.</b> 5 dingen die je al lang wilde doen maar nooit doet."},
+  {i:"🎲",t:"<b>Laat het rad kiezen.</b> Geen denken meer — gewoon doen."},
+  {i:"🚶",t:"<b>Loop 5 minuten naar buiten.</b> Zonder doel. Je hersenen resetten."},
+  {i:"📞",t:"<b>Bel iemand die je lang niet hebt gesproken.</b> Niet appen. Bellen."},
+  {i:"📚",t:"<b>Lees één hoofdstuk.</b> Eén. Niet een heel boek. Eén."},
+  {i:"🎨",t:"<b>Maak iets met je handen.</b> Tekenen, kleien, vouwen — maakt niet uit."},
+  {i:"🧹",t:"<b>Ruim één lade op.</b> Niet je hele kamer. Eén lade. Voelt fantastisch."},
+  {i:"🍳",t:"<b>Maak iets te eten dat je nog nooit hebt gemaakt.</b> Het hoeft niet te lukken."},
+  {i:"📷",t:"<b>Maak 10 foto's</b> van dingen die je mooi vindt in jouw kamer. Echt doen."},
+  {i:"💃",t:"<b>Dans 1 nummer.</b> Hard. In je eentje. Schaamte komt niet voor in dit huis."},
+  {i:"🧠",t:"<b>Leer één nieuw woord</b> in een andere taal en gebruik 'm vandaag."},
+  {i:"✍️",t:"<b>Schrijf 1 zin op</b> over hoe je je nu voelt. Eén. Klaar."},
+  {i:"🌱",t:"<b>Plant iets.</b> Een avocado-pit telt. Geef 'm water. Wacht."},
+  {i:"🤹",t:"<b>Leer iets in 5 minuten.</b> YouTube heeft alles. Jongleren? Origami? Mondharmonica? Probeer."}
+];
+
+const ACTIVITIES = [
+  {n:"Een fort bouwen van kussens", t:["binnen","alleen","creatief","kort"], age:["kinderen","tieners"]},
+  {n:"Naar het park fietsen", t:["buiten","alleen","actief","middel"], age:["kinderen","tieners","volwassenen"]},
+  {n:"Een klimhal bezoeken", t:["binnen","samen","actief","middel"], age:["tieners","volwassenen"]},
+  {n:"Een puzzel doen", t:["binnen","alleen","rustig","lang"], age:["kinderen","tieners","volwassenen"]},
+  {n:"Voetballen op straat", t:["buiten","samen","actief","middel"], age:["kinderen","tieners","volwassenen"]},
+  {n:"Hockey op straat", t:["buiten","samen","actief","middel"], age:["kinderen","tieners"]},
+  {n:"Een tekening maken", t:["binnen","alleen","creatief","middel"], age:["kinderen","tieners","volwassenen"]},
+  {n:"Naar het strand", t:["buiten","samen","rustig","lang"], age:["kinderen","tieners","volwassenen"]},
+  {n:"Verstoppertje", t:["binnen","samen","actief","kort"], age:["kinderen"]},
+  {n:"Een film kijken", t:["binnen","samen","rustig","lang"], age:["kinderen","tieners","volwassenen"]},
+  {n:"Stoepkrijten", t:["buiten","alleen","creatief","kort"], age:["kinderen"]},
+  {n:"Skateboarden", t:["buiten","alleen","actief","middel"], age:["tieners","volwassenen"]},
+  {n:"Een hut bouwen in de tuin", t:["buiten","samen","creatief","lang"], age:["kinderen","tieners"]},
+  {n:"Bordspel spelen", t:["binnen","samen","rustig","lang"], age:["kinderen","tieners","volwassenen"]},
+  {n:"Tikkertje", t:["buiten","samen","actief","kort"], age:["kinderen"]},
+  {n:"Pannenkoeken bakken", t:["binnen","samen","creatief","middel"], age:["kinderen","tieners","volwassenen"]},
+  {n:"Lego'n", t:["binnen","alleen","creatief","lang"], age:["kinderen","tieners"]},
+  {n:"Tafeltennissen", t:["binnen","samen","actief","middel"], age:["kinderen","tieners","volwassenen"]},
+  {n:"Een TikTok-dans leren", t:["binnen","alleen","actief","kort"], age:["tieners"]},
+  {n:"Boek lezen", t:["binnen","alleen","rustig","lang"], age:["tieners","volwassenen"]},
+  {n:"Trampoline springen", t:["buiten","alleen","actief","kort"], age:["kinderen","tieners"]},
+  {n:"Schaken (online of fysiek)", t:["binnen","samen","rustig","middel"], age:["tieners","volwassenen"]},
+  {n:"Naar de bib gaan", t:["buiten","alleen","rustig","middel"], age:["tieners","volwassenen"]},
+  {n:"Kaartspel: pesten", t:["binnen","samen","rustig","middel"], age:["kinderen","tieners","volwassenen"]},
+  {n:"Eigen muziek maken op telefoon", t:["binnen","alleen","creatief","middel"], age:["tieners","volwassenen"]},
+  {n:"Wandelen met de hond", t:["buiten","alleen","rustig","middel"], age:["tieners","volwassenen"]},
+  {n:"Brood bakken", t:["binnen","alleen","creatief","lang"], age:["tieners","volwassenen"]},
+  {n:"Met vrienden afspreken om te chillen", t:["binnen","samen","rustig","lang"], age:["tieners","volwassenen"]},
+  {n:"Boomklimmen", t:["buiten","alleen","actief","kort"], age:["kinderen","tieners"]},
+  {n:"Lego-stop-motion-filmpje maken", t:["binnen","alleen","creatief","lang"], age:["kinderen","tieners"]},
+  {n:"Origami vouwen", t:["binnen","alleen","creatief","kort"], age:["kinderen","tieners","volwassenen"]},
+  {n:"Naar de speeltuin", t:["buiten","samen","actief","middel"], age:["kinderen"]},
+  {n:"Slime maken", t:["binnen","alleen","creatief","middel"], age:["kinderen","tieners"]},
+  {n:"Geocaching", t:["buiten","samen","actief","lang"], age:["tieners","volwassenen"]},
+  {n:"Memoryspel", t:["binnen","samen","rustig","kort"], age:["kinderen","tieners"]},
+  {n:"Foto-jacht: vind 10 rode dingen", t:["binnen","alleen","creatief","kort"], age:["kinderen","tieners"]},
+  {n:"Een nieuw kapsel proberen", t:["binnen","alleen","creatief","kort"], age:["tieners","volwassenen"]},
+  {n:"Vlieger laten vliegen", t:["buiten","alleen","actief","middel"], age:["kinderen","tieners"]},
+  {n:"Yoga doen (YouTube)", t:["binnen","alleen","rustig","kort"], age:["tieners","volwassenen"]},
+  {n:"Eigen recept verzinnen en koken", t:["binnen","alleen","creatief","middel"], age:["tieners","volwassenen"]}
+];
+
+const COLORS_WHEEL = ["#ffd54f","#9c27ff","#ff5e3a","#4caf50","#03a9f4","#ffeb3b","#e91e63","#00bcd4","#8bc34a","#ff9800","#673ab7","#f44336"];
+const ALL_TAGS = ["binnen","buiten","alleen","samen","actief","rustig","creatief","kort","middel","lang"];
+
+const state = {
+  wheelItems: JSON.parse(localStorage.getItem("ivm_wheel") || "null") || [...DEFAULT_WHEEL],
+  quizAnswers: JSON.parse(localStorage.getItem("ivm_quiz") || "{}"),
+  customActs: JSON.parse(localStorage.getItem("ivm_custom") || "[]"),
+  ageMode: localStorage.getItem("ivm_age") || "tieners",
+  muted: localStorage.getItem("ivm_mute") === "1",
+  quizIndex: 0,
+  activeFilters: new Set(),
+  spinning: false,
+  wheelAngle: 0,
+  newActTags: new Set()
+};
+
+function save() {
+  localStorage.setItem("ivm_wheel", JSON.stringify(state.wheelItems));
+  localStorage.setItem("ivm_quiz", JSON.stringify(state.quizAnswers));
+  localStorage.setItem("ivm_custom", JSON.stringify(state.customActs));
+  localStorage.setItem("ivm_age", state.ageMode);
+  localStorage.setItem("ivm_mute", state.muted ? "1" : "0");
+}
+
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
+
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {} }
+  return audioCtx;
+}
+function tick(freq) {
+  if (state.muted) return;
+  const ac = ensureAudio(); if (!ac) return;
+  const o = ac.createOscillator(); const g = ac.createGain();
+  o.connect(g); g.connect(ac.destination);
+  o.frequency.value = freq; o.type = "square";
+  g.gain.setValueAtTime(0.04, ac.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.04);
+  o.start(); o.stop(ac.currentTime + 0.05);
+}
+function winSound() {
+  if (state.muted) return;
+  [600, 800, 1000, 1300].forEach((f,i) => setTimeout(() => tick(f), i*90));
+}
+
+function confetti() {
+  const wrap = document.createElement("div"); wrap.className = "confetti";
+  const colors = ["#ffd54f","#9c27ff","#ff5e3a","#4caf50","#03a9f4"];
+  for (let i = 0; i < 30; i++) {
+    const s = document.createElement("span");
+    s.style.left = Math.random() * 100 + "vw";
+    s.style.background = colors[i % colors.length];
+    s.style.animationDelay = (Math.random() * 0.3) + "s";
+    s.style.animationDuration = (1.2 + Math.random() * 0.8) + "s";
+    wrap.appendChild(s);
+  }
+  document.body.appendChild(wrap);
+  setTimeout(() => wrap.remove(), 2200);
+}
+
+document.querySelectorAll(".tab").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("panel-" + btn.dataset.tab).classList.add("active");
+  });
+});
+
+function drawWheel() {
+  const svg = document.getElementById("wheel");
+  const items = state.wheelItems; const n = items.length;
+  if (n === 0) { svg.innerHTML = '<circle cx="100" cy="100" r="98" fill="#fef9e7"/>'; return; }
+  let html = "";
+  for (let i = 0; i < n; i++) {
+    const a1 = (i/n) * 2 * Math.PI - Math.PI/2;
+    const a2 = ((i+1)/n) * 2 * Math.PI - Math.PI/2;
+    const x1 = 100 + 98 * Math.cos(a1), y1 = 100 + 98 * Math.sin(a1);
+    const x2 = 100 + 98 * Math.cos(a2), y2 = 100 + 98 * Math.sin(a2);
+    const large = (a2 - a1) > Math.PI ? 1 : 0;
+    html += `<path d="M 100 100 L ${x1} ${y1} A 98 98 0 ${large} 1 ${x2} ${y2} Z" fill="${COLORS_WHEEL[i % COLORS_WHEEL.length]}" stroke="#1a1a1a" stroke-width="2"/>`;
+    const ta = (a1+a2)/2, tx = 100 + 55 * Math.cos(ta), ty = 100 + 55 * Math.sin(ta);
+    const rot = (ta * 180/Math.PI) + 90;
+    const label = items[i].length > 14 ? items[i].slice(0,13) + "…" : items[i];
+    html += `<text x="${tx}" y="${ty}" text-anchor="middle" font-size="9" font-weight="700" fill="#1a1a1a" transform="rotate(${rot} ${tx} ${ty})">${escapeHtml(label)}</text>`;
+  }
+  svg.innerHTML = html;
+}
+
+function spin() {
+  if (state.spinning || state.wheelItems.length < 2) return;
+  state.spinning = true;
+  const btn = document.getElementById("spin-btn"); btn.disabled = true;
+  const r = document.getElementById("wheel-result");
+  r.textContent = "Draait..."; r.classList.remove("pop");
+  const n = state.wheelItems.length;
+  const winner = Math.floor(Math.random() * n);
+  const sliceDeg = 360/n;
+  const targetDeg = -winner * sliceDeg - sliceDeg/2;
+  const turns = 5 + Math.floor(Math.random()*3);
+  const finalAngle = state.wheelAngle + turns*360 + (targetDeg - (state.wheelAngle % 360));
+  state.wheelAngle = finalAngle;
+  document.getElementById("wheel").style.transform = `rotate(${finalAngle}deg)`;
+  const ticker = setInterval(() => tick(550 + Math.random()*200), 100);
+  setTimeout(() => clearInterval(ticker), 3900);
+  setTimeout(() => {
+    state.spinning = false; btn.disabled = false;
+    winSound(); confetti();
+    r.innerHTML = "👉 <b>" + escapeHtml(state.wheelItems[winner]) + "</b>";
+    r.classList.add("pop");
+  }, 4100);
+}
+
+function renderWheelItems() {
+  const c = document.getElementById("wheel-items-list"); c.innerHTML = "";
+  state.wheelItems.forEach((it, idx) => {
+    const row = document.createElement("div"); row.className = "wheel-item-row";
+    row.innerHTML = `<input type="text" value="${escapeHtml(it)}" data-idx="${idx}"><button data-idx="${idx}">×</button>`;
+    c.appendChild(row);
+  });
+  c.querySelectorAll("input").forEach(inp => inp.addEventListener("change", e => {
+    state.wheelItems[+e.target.dataset.idx] = e.target.value.trim() || "Iets leuks";
+    save(); drawWheel();
+  }));
+  c.querySelectorAll("button").forEach(b => b.addEventListener("click", e => {
+    if (state.wheelItems.length <= 2) { alert("Minimaal 2 items nodig."); return; }
+    state.wheelItems.splice(+e.target.dataset.idx, 1);
+    save(); drawWheel(); renderWheelItems();
+  }));
+}
+
+document.getElementById("spin-btn").addEventListener("click", spin);
+document.getElementById("add-wheel-item").addEventListener("click", () => {
+  if (state.wheelItems.length >= 12) { alert("Max. 12 items."); return; }
+  state.wheelItems.push("Nieuw idee");
+  save(); drawWheel(); renderWheelItems();
+});
+
+function renderQuiz() {
+  const c = document.getElementById("quiz-content");
+  const fill = document.getElementById("q-progress-fill");
+  if (state.quizIndex >= QUIZ.length) {
+    fill.style.width = "100%";
+    const tags = {};
+    for (const dim in state.quizAnswers) {
+      const v = state.quizAnswers[dim]; tags[v] = (tags[v]||0) + 1;
+    }
+    const topTags = Object.entries(tags).sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>x[0]).filter(t => ALL_TAGS.includes(t));
+    c.innerHTML = `<div class="q-done"><h3>Klaar! 🎉</h3><p>Bekijk de lijst onder <b>📋 Lijst</b> — die filtert ik nu op wat jij leuk vindt: <b>${topTags.join(", ") || "alles"}</b></p><button class="add-btn" id="reset-quiz" style="margin-top:14px;">Opnieuw doen</button></div>`;
+    document.getElementById("reset-quiz").addEventListener("click", () => {
+      state.quizAnswers = {}; state.quizIndex = 0; state.activeFilters.clear(); save(); renderQuiz(); renderFilters(); renderActivities();
+    });
+    state.activeFilters.clear();
+    topTags.forEach(t => state.activeFilters.add(t));
+    renderFilters(); renderActivities();
+    return;
+  }
+  fill.style.width = ((state.quizIndex/QUIZ.length)*100) + "%";
+  const q = QUIZ[state.quizIndex];
+  c.innerHTML = `<div class="q-num">Vraag ${state.quizIndex+1}/${QUIZ.length}</div><div class="q-text">${q.q}</div><div class="q-options">${q.a.map(o => `<div class="q-opt" data-v="${o.v}"><span class="q-opt-emoji">${o.e}</span>${o.t}</div>`).join("")}</div>`;
+  c.querySelectorAll(".q-opt").forEach(o => o.addEventListener("click", () => {
+    state.quizAnswers[q.dim + "_" + state.quizIndex] = o.dataset.v;
+    state.quizIndex++; save(); renderQuiz();
+  }));
+}
+
+function renderTips() {
+  document.getElementById("tips-list").innerHTML = TIPS.map(t => `<div class="tip"><div class="tip-icon">${t.i}</div><div class="tip-text">${t.t}</div></div>`).join("");
+}
+
+function renderFilters() {
+  const c = document.getElementById("act-filters");
+  c.innerHTML = ALL_TAGS.map(t => `<span class="act-filter ${state.activeFilters.has(t) ? "" : "off"}" data-t="${t}">${t}</span>`).join("");
+  c.querySelectorAll(".act-filter").forEach(el => el.addEventListener("click", () => {
+    const t = el.dataset.t;
+    if (state.activeFilters.has(t)) state.activeFilters.delete(t); else state.activeFilters.add(t);
+    renderFilters(); renderActivities();
+  }));
+}
+
+function allActivities() {
+  return [...ACTIVITIES, ...state.customActs.map(a => ({...a, custom:true}))]
+    .filter(a => !a.age || a.age.includes(state.ageMode));
+}
+
+function renderActivities() {
+  const all = allActivities();
+  const filtered = state.activeFilters.size === 0 ? all : all.filter(a => [...state.activeFilters].every(f => a.t.includes(f)));
+  const c = document.getElementById("activities-list");
+  if (filtered.length === 0) { c.innerHTML = '<div class="empty">Geen activiteiten match deze combinatie. Zet filters uit of probeer een andere leeftijdsmodus.</div>'; return; }
+  c.innerHTML = filtered.map(a => {
+    const delBtn = a.custom ? `<button class="del" data-name="${escapeHtml(a.n)}">×</button>` : "";
+    return `<div class="activity ${a.custom?"custom":""}">${delBtn}<div class="activity-title">${escapeHtml(a.n)}</div><div class="activity-tags">${a.t.map(x=>`<span class="activity-tag">${x}</span>`).join("")}</div></div>`;
+  }).join("");
+  c.querySelectorAll(".del").forEach(b => b.addEventListener("click", e => {
+    const name = e.target.dataset.name;
+    state.customActs = state.customActs.filter(c => c.n !== name);
+    save(); renderActivities();
+  }));
+}
+
+function renderAddActForm() {
+  const c = document.getElementById("new-act-tags");
+  c.innerHTML = ALL_TAGS.map(t => `<span data-t="${t}" class="${state.newActTags.has(t)?"on":""}">${t}</span>`).join("");
+  c.querySelectorAll("span").forEach(s => s.addEventListener("click", () => {
+    const t = s.dataset.t;
+    if (state.newActTags.has(t)) state.newActTags.delete(t); else state.newActTags.add(t);
+    renderAddActForm();
+  }));
+}
+document.getElementById("show-add-act").addEventListener("click", () => {
+  document.getElementById("add-act-form").style.display = "block";
+  state.newActTags.clear(); renderAddActForm();
+});
+document.getElementById("cancel-new-act").addEventListener("click", () => {
+  document.getElementById("add-act-form").style.display = "none";
+  document.getElementById("new-act-name").value = "";
+});
+document.getElementById("save-new-act").addEventListener("click", () => {
+  const name = document.getElementById("new-act-name").value.trim();
+  if (!name) { alert("Vul een naam in."); return; }
+  if (state.newActTags.size === 0) { alert("Kies minimaal één tag."); return; }
+  state.customActs.push({ n: name, t: [...state.newActTags] });
+  save();
+  document.getElementById("add-act-form").style.display = "none";
+  document.getElementById("new-act-name").value = "";
+  renderActivities();
+});
+
+function dailySeed() {
+  const d = new Date(); const s = d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate();
+  let h = 0; for (let i = 0; i < s.length; i++) h = ((h<<5) - h + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+function renderDaily() {
+  const pool = allActivities();
+  if (pool.length === 0) { document.getElementById("daily-act").textContent = "Geen activiteit voor deze modus."; return; }
+  const pick = pool[dailySeed() % pool.length];
+  document.getElementById("daily-act").textContent = pick.n;
+}
+document.getElementById("daily-banner").addEventListener("click", () => {
+  document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
+  document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+  document.querySelector('[data-tab="list"]').classList.add("active");
+  document.getElementById("panel-list").classList.add("active");
+});
+
+function setAge(a) {
+  state.ageMode = a; save();
+  document.querySelectorAll("#age-pick button").forEach(b => b.classList.toggle("on", b.dataset.a === a));
+  renderActivities(); renderDaily();
+}
+document.querySelectorAll("#age-pick button").forEach(b => b.addEventListener("click", () => setAge(b.dataset.a)));
+
+function setMute(m) {
+  state.muted = m; save();
+  document.getElementById("mute-btn").classList.toggle("muted", m);
+  document.getElementById("mute-btn").textContent = m ? "🔇" : "🔊";
+}
+document.getElementById("mute-btn").addEventListener("click", () => setMute(!state.muted));
+
+function buildPosterSVG(big) {
+  const W = big ? 800 : 400, H = big ? 1000 : 500;
+  const sid = big ? "stripesB" : "stripesA";
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+    <defs>
+      <pattern id="${sid}" patternUnits="userSpaceOnUse" width="${W/20}" height="${W/20}" patternTransform="rotate(45)">
+        <rect width="${W/40}" height="${W/20}" fill="#ffd54f"/>
+        <rect x="${W/40}" width="${W/40}" height="${W/20}" fill="#1a1a1a"/>
+      </pattern>
+    </defs>
+    <rect width="${W}" height="${H}" fill="url(#${sid})"/>
+    <rect x="${W*0.05}" y="${H*0.04}" width="${W*0.9}" height="${H*0.92}" fill="#ffd54f" stroke="#1a1a1a" stroke-width="${W/80}"/>
+    <text x="${W/2}" y="${H*0.2}" text-anchor="middle" font-size="${W*0.16}" font-family="sans-serif" font-weight="900" fill="#1a1a1a">⚠</text>
+    <text x="${W/2}" y="${H*0.42}" text-anchor="middle" font-size="${W*0.14}" font-family="sans-serif" font-weight="900" fill="#1a1a1a">VERBODEN</text>
+    <text x="${W/2}" y="${H*0.54}" text-anchor="middle" font-size="${W*0.14}" font-family="sans-serif" font-weight="900" fill="#1a1a1a">TE</text>
+    <text x="${W/2}" y="${H*0.66}" text-anchor="middle" font-size="${W*0.14}" font-family="sans-serif" font-weight="900" fill="#1a1a1a">VERVELEN</text>
+    <text x="${W/2}" y="${H*0.82}" text-anchor="middle" font-size="${W*0.05}" font-family="sans-serif" fill="#1a1a1a">Op bevel van jezelf</text>
+    <text x="${W/2}" y="${H*0.92}" text-anchor="middle" font-size="${W*0.04}" font-family="sans-serif" fill="#1a1a1a">ikverveelme.app</text>
+  </svg>`;
+}
+document.getElementById("poster-btn").addEventListener("click", () => {
+  const oldEl = document.getElementById("poster-svg");
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = buildPosterSVG(false).replace("<svg ", '<svg id="poster-svg" ');
+  oldEl.parentNode.replaceChild(wrapper.firstElementChild, oldEl);
+  document.getElementById("poster-overlay").classList.add("show");
+});
+document.getElementById("close-poster").addEventListener("click", () => {
+  document.getElementById("poster-overlay").classList.remove("show");
+});
+document.getElementById("download-poster").addEventListener("click", () => {
+  const svg = buildPosterSVG(true);
+  const blob = new Blob([svg], {type: "image/svg+xml;charset=utf-8"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "verboden-te-vervelen.svg";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+
+setAge(state.ageMode);
+setMute(state.muted);
+drawWheel();
+renderWheelItems();
+renderQuiz();
+renderTips();
+renderFilters();
+renderActivities();
+renderDaily();
+</script>
+
+</body>
+</html>
