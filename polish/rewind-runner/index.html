@@ -1,0 +1,1259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>Rewind Runner — Phase 2 — Levels &amp; Content</title>
+<style>
+  :root { --bg-a:#0a0e27; --bg-b:#1a1f3a; --lane:rgba(255,255,255,0.06);
+          --player:#ffd35c; --obst:#ff5e3a; --coin:#ffd35c; --rewind:#ff9e2c; }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg-a);
+               color: #eaeaff; font-family: -apple-system, system-ui, sans-serif;
+               user-select: none; touch-action: none; }
+  #wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; background: linear-gradient(180deg, var(--bg-a), var(--bg-b));
+           width: 100%; height: 100%; touch-action: none; }
+  #ui { position: fixed; inset: 0; pointer-events: none; }
+  #topbar { position: absolute; top: 12px; left: 12px; right: 12px; display: flex;
+            justify-content: space-between; align-items: flex-start; gap: 12px; }
+  #score { font-size: 24px; font-weight: 700; text-shadow: 0 2px 6px #000a; }
+  #score small { display: block; font-size: 11px; opacity: 0.7; font-weight: 400; }
+  #levelInfo { font-size: 13px; font-weight: 700; text-align: center; opacity: 0.9;
+               text-shadow: 0 2px 6px #000a; min-width: 90px; }
+  #levelInfo small { display: block; font-size: 10px; opacity: 0.7; font-weight: 400;
+                     text-transform: uppercase; letter-spacing: 1px; }
+  #meterBox { width: 140px; }
+  #meterLabel { font-size: 10px; opacity: 0.7; text-transform: uppercase;
+                letter-spacing: 1px; margin-bottom: 4px; text-align: right; }
+  #meterBar { height: 10px; background: rgba(255,255,255,0.08); border-radius: 5px;
+              overflow: hidden; border: 1px solid rgba(255,255,255,0.12); }
+  #meterFill { height: 100%; width: 0%; background: var(--rewind);
+               transition: background 0.2s; box-shadow: 0 0 8px var(--rewind); }
+  #meterFill.full { background: #ffd35c; box-shadow: 0 0 12px #ffd35c;
+                    animation: meterPulse 1s ease-in-out infinite; }
+  @keyframes meterPulse { 0%,100% { filter: brightness(1); } 50% { filter: brightness(1.35); } }
+  #rewindBtn { position: absolute; right: 16px; bottom: 32px; width: 86px; height: 86px;
+               border-radius: 50%; background: rgba(255,158,44,0.18); color: #fff;
+               border: 2px solid var(--rewind); font-weight: 700; font-size: 12px;
+               letter-spacing: 1.5px; pointer-events: auto; touch-action: none;
+               box-shadow: 0 4px 16px #0008; cursor: pointer; }
+  #rewindBtn:disabled { opacity: 0.35; border-color: #555; background: rgba(255,255,255,0.04); }
+  #rewindBtn.active { background: var(--rewind); color: #0a0e27; transform: scale(0.95);
+                      box-shadow: 0 0 24px var(--rewind); }
+  .overlay { position: absolute; inset: 0; display: none; align-items: center;
+             justify-content: center; flex-direction: column; gap: 16px;
+             background: rgba(10,14,39,0.86); pointer-events: auto;
+             padding: 24px; overflow-y: auto; }
+  .overlay.show { display: flex; }
+  .overlay h1 { font-size: 34px; color: var(--player); letter-spacing: 2px; text-align: center; }
+  .overlay h2 { font-size: 14px; opacity: 0.6; text-transform: uppercase;
+                letter-spacing: 2px; font-weight: 600; }
+  .overlay p { opacity: 0.82; font-size: 14px; max-width: 320px; text-align: center;
+               line-height: 1.5; }
+  .btn { background: var(--player); color: #0a0e27; border: 0;
+         padding: 14px 32px; border-radius: 8px; font-weight: 700;
+         font-size: 16px; cursor: pointer; touch-action: manipulation; }
+  .btn.ghost { background: rgba(255,255,255,0.08); color: #eaeaff;
+               border: 1px solid rgba(255,255,255,0.18); }
+  /* level selector */
+  #levelList { display: flex; flex-direction: column; gap: 10px; width: 100%;
+               max-width: 400px; }
+  .lvlCard { display: flex; align-items: center; gap: 12px; text-align: left;
+             background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12);
+             border-radius: 10px; padding: 12px 14px; cursor: pointer;
+             touch-action: manipulation; color: #eaeaff; width: 100%; }
+  .lvlCard:hover { background: rgba(255,255,255,0.09); }
+  .lvlCard.endless { border-color: var(--rewind);
+                     background: linear-gradient(135deg, rgba(255,158,44,0.16), rgba(255,94,58,0.10)); }
+  .lvlCard .badge { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 8px;
+                    display: flex; align-items: center; justify-content: center;
+                    font-weight: 800; font-size: 15px; background: rgba(255,255,255,0.1); }
+  .lvlCard.done .badge { background: var(--player); color: #0a0e27; }
+  .lvlCard .body { flex: 1; min-width: 0; }
+  .lvlCard .name { font-weight: 700; font-size: 15px; }
+  .lvlCard .desc { font-size: 11px; opacity: 0.66; line-height: 1.35; margin-top: 2px; }
+  .lvlCard .status { font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+                     opacity: 0.5; margin-top: 4px; }
+  .lvlCard.done .status { color: var(--player); opacity: 0.95; }
+  #hint { position: absolute; bottom: 12px; left: 12px; font-size: 10px;
+          opacity: 0.45; line-height: 1.4; }
+  #rewindOverlay { position: absolute; inset: 0; background: var(--rewind);
+                   mix-blend-mode: overlay; opacity: 0; pointer-events: none;
+                   transition: opacity 0.15s; }
+  #rewindOverlay.on { opacity: 0.45; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="game"></canvas></div>
+<div id="rewindOverlay"></div>
+<div id="ui">
+  <div id="topbar">
+    <div id="score">0<small>SCORE</small></div>
+    <div id="levelInfo" style="display:none">ENDLESS<small>00:00</small></div>
+    <div id="meterBox">
+      <div id="meterLabel">REWIND</div>
+      <div id="meterBar"><div id="meterFill"></div></div>
+    </div>
+  </div>
+  <button id="rewindBtn" disabled>REWIND</button>
+  <div id="hint">A/D or arrows = lane &middot; W/Space/Up = jump &middot; S/Down = slide &middot; Hold R = rewind</div>
+
+  <!-- Level selector -->
+  <div id="menu" class="overlay show">
+    <h1>REWIND RUNNER</h1>
+    <p>Pick your moment to undo. Choose Endless mode or take on a challenge level.</p>
+    <div id="levelList"></div>
+  </div>
+
+  <!-- Result / game over / level complete -->
+  <div id="result" class="overlay">
+    <h2 id="resultKicker">GAME OVER</h2>
+    <h1 id="resultTitle">REWIND RUNNER</h1>
+    <p id="resultText"></p>
+    <button id="retryBtn" class="btn">RETRY</button>
+    <button id="menuBtn" class="btn ghost">LEVEL SELECT</button>
+  </div>
+</div>
+<script>
+"use strict";
+(() => {
+  // ---------- canvas + DPR ----------
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+  let W = 0, H = 0, DPR = 1;
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W * DPR; canvas.height = H * DPR;
+    canvas.style.width = W + "px"; canvas.style.height = H + "px";
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    buildParallax();   // parallax world-width depends on W/H — rebuild on resize
+  }
+  window.addEventListener("resize", resize);
+
+  // ---------- constants ----------
+  const LANES = 3;
+  const LANE_W_FRAC = 0.7;        // % of screen width used by lanes
+  const HORIZON_Y_FRAC = 0.28;     // perspective vanish point Y
+  const FLOOR_Y_FRAC = 0.92;       // player feet on screen
+  const JUMP_S = 0.6, SLIDE_S = 0.5;
+  const REWIND_FILL_S = 30, REWIND_DURATION_S = 3, REWIND_RATE = 3.0; // 3x speed back
+  const REWIND_POST_LOCK_S = 0.5;
+  const BUFFER_FPS = 30, BUFFER_FRAMES = 90; // 3 sec @ 30 fps
+  const SPAWN_AHEAD = 80;          // world units ahead of player
+  const DESPAWN_BEHIND = 8;
+  const SIM_FPS = 60;              // reference fps that spawn-rate (frames) is expressed in
+  const COLORS = { player:"#ffd35c", obst:"#ff5e3a", coin:"#ffd35c",
+                   lane:"rgba(255,255,255,0.06)", ghost:"rgba(255,158,44,0.9)" };
+  // obstacle type name <-> index map (index used by render/collision code)
+  const OBST_INDEX = { block: 0, low: 1, high: 2 };
+  const OBST_NAME = ["block", "low", "high"];
+
+  // ---------- level data (embedded — identical structure to levels.json) ----------
+  // Endless tuning + 8 challenge levels per GDD §5.1 and §11. Tweak here to rebalance.
+  const LEVELS = {
+    endless: {
+      id: "endless", name: "Endless",
+      desc: "Run forever. Speed climbs, obstacles thicken. How far can you get?",
+      duration: 0, obstacleTypes: ["block", "low", "high", "combo"],
+      spawnRateStart: 28, spawnRateEnd: 14,
+      speedStart: 6, speedEnd: 14, speedRampSec: 60,
+      speedLateEnd: 18, speedLateRampSec: 300,
+      coinDensity: 0.4, win: { type: "endless" }
+    },
+    levels: [
+      { id: "first-steps", name: "First Steps",
+        desc: "No obstacles. Just coins. Learn to move between lanes.",
+        duration: 30, obstacleTypes: [],
+        spawnRateStart: 26, spawnRateEnd: 26,
+        speedStart: 6, speedEnd: 6, speedRampSec: 30,
+        coinDensity: 1.0, win: { type: "survive", seconds: 30 } },
+      { id: "block-party", name: "Block Party",
+        desc: "Block obstacles only. Master lane-switching to dodge.",
+        duration: 60, obstacleTypes: ["block"],
+        spawnRateStart: 26, spawnRateEnd: 18,
+        speedStart: 7, speedEnd: 10, speedRampSec: 60,
+        coinDensity: 0.4, win: { type: "survive", seconds: 60 } },
+      { id: "limbo", name: "Limbo",
+        desc: "Low and high obstacles. Jump over, slide under.",
+        duration: 60, obstacleTypes: ["low", "high"],
+        spawnRateStart: 26, spawnRateEnd: 18,
+        speedStart: 7, speedEnd: 10, speedRampSec: 60,
+        coinDensity: 0.4, win: { type: "survive", seconds: 60 } },
+      { id: "rewind-tutorial", name: "Rewind Tutorial",
+        desc: "Learn the rewind. Use it at least once to clear this level.",
+        duration: 90, obstacleTypes: ["block", "low", "high"],
+        spawnRateStart: 22, spawnRateEnd: 16,
+        speedStart: 7, speedEnd: 11, speedRampSec: 90,
+        coinDensity: 0.5, win: { type: "surviveAndRewind", seconds: 90 } },
+      { id: "the-gauntlet", name: "The Gauntlet",
+        desc: "Combo walls. Only one lane is ever safe. Stay sharp.",
+        duration: 120, obstacleTypes: ["combo"],
+        spawnRateStart: 24, spawnRateEnd: 16,
+        speedStart: 8, speedEnd: 12, speedRampSec: 120,
+        coinDensity: 0.3, win: { type: "survive", seconds: 120 } },
+      { id: "coin-rush", name: "Coin Rush",
+        desc: "No obstacles, just a flood of coins. Go for a huge score.",
+        duration: 60, obstacleTypes: [],
+        spawnRateStart: 14, spawnRateEnd: 14,
+        speedStart: 9, speedEnd: 11, speedRampSec: 60,
+        coinDensity: 1.0, win: { type: "survive", seconds: 60 } },
+      { id: "speed-demon", name: "Speed Demon",
+        desc: "Starts at top speed. Survive 60 seconds without slowing.",
+        duration: 60, obstacleTypes: ["block", "low", "high"],
+        spawnRateStart: 18, spawnRateEnd: 14,
+        speedStart: 12, speedEnd: 14, speedRampSec: 60,
+        coinDensity: 0.4, win: { type: "survive", seconds: 60 } },
+      { id: "marathon", name: "Marathon",
+        desc: "No tricks. Just five full minutes of pure endurance.",
+        duration: 300, obstacleTypes: ["block", "low", "high", "combo"],
+        spawnRateStart: 26, spawnRateEnd: 16,
+        speedStart: 7, speedEnd: 13, speedRampSec: 180,
+        coinDensity: 0.4, win: { type: "survive", seconds: 300 } }
+    ]
+  };
+
+  // ---------- difficulty curve ----------
+  // Explicit, tweakable. speedAt() and spawnIntervalAt() drive the whole curve.
+  // For endless: 6->14 over 60s, then 14->18 over the next 300s (GDD §5.1).
+  function speedAt(cfg, elapsed) {
+    const s0 = cfg.speedStart, s1 = cfg.speedEnd, ramp = cfg.speedRampSec || 60;
+    if (elapsed <= ramp) {
+      return s0 + (s1 - s0) * (elapsed / ramp);
+    }
+    // late-game ramp (endless only — challenge levels just hold speedEnd)
+    if (cfg.speedLateEnd && cfg.speedLateRampSec) {
+      const lt = Math.min(1, (elapsed - ramp) / cfg.speedLateRampSec);
+      return s1 + (cfg.speedLateEnd - s1) * lt;
+    }
+    return s1;
+  }
+  // Spawn interval in *world units of gap* derived from a frame-count that
+  // shrinks from spawnRateStart to spawnRateEnd over the speed ramp window.
+  // frames -> seconds (/SIM_FPS) -> world units (* current speed).
+  function spawnIntervalAt(cfg, elapsed, speed) {
+    const ramp = cfg.speedRampSec || 60;
+    const t = Math.min(1, elapsed / ramp);
+    const frames = cfg.spawnRateStart + (cfg.spawnRateEnd - cfg.spawnRateStart) * t;
+    return (frames / SIM_FPS) * speed;
+  }
+
+  // ---------- state ----------
+  let state = null;
+  let activeCfg = LEVELS.endless;   // currently selected level config
+  function freshState(cfg) {
+    return {
+      cfg: cfg,
+      mode: cfg.id,         // "endless" or level id
+      running: false, gameOver: false, won: false,
+      t: 0, dt: 0,
+      elapsed: 0,           // gameplay seconds (drives difficulty curve)
+      speed: cfg.speedStart,
+      distance: 0,          // world units traveled
+      score: 0,             // coins * 5
+      lane: 1,              // 0..2
+      laneT: 1,             // smoothed (for animation)
+      y: 0, vy: 0,          // jump height (world units)
+      sliding: false, slideUntil: 0,
+      jumping: false, jumpUntil: 0,
+      animPhase: 0,         // 0..1, drives the 2-frame run cycle (art-bible §6.4)
+      obstacles: [],        // {z, lane, type, alive}
+      coins: [],            // {z, lane, y, alive}
+      nextSpawnZ: 18,
+      rewindMeter: 0,       // 0..1
+      rewinding: false,
+      rewindCooldown: 0,
+      rewindUsed: false,    // for surviveAndRewind win-condition
+      bufferAcc: 0,
+      buffer: [],           // ring of snapshots
+      ghost: null,          // {pts:[{x,y}], life}
+    };
+  }
+
+  // ---------- pool ----------
+  const obsPool = [], coinPool = [];
+  function getObs() { return obsPool.pop() || {z:0,lane:0,type:0,alive:false}; }
+  function putObs(o) { o.alive = false; obsPool.push(o); }
+  function getCoin() { return coinPool.pop() || {z:0,lane:0,y:0,alive:false}; }
+  function putCoin(c) { c.alive = false; coinPool.push(c); }
+
+  // ---------- particle pool (Fase 3 §10 — coin sparkle bursts) ----------
+  // Lives at module scope, OUTSIDE `state`: particles are pure cosmetic VFX and
+  // must NOT end up in the rewind ringbuffer (keeps snapshot()/restore() cheap).
+  const PARTICLE_CAP = 120;                 // hard ceiling on active particles
+  const particlePool = [];
+  const particles = [];                     // active list
+  function getParticle() {
+    return particlePool.pop() ||
+      { x:0, y:0, vx:0, vy:0, life:0, maxLife:0, size:0, color:"#fff4cc", alive:false };
+  }
+  function putParticle(p) { p.alive = false; particlePool.push(p); }
+  function clearParticles() { while (particles.length) putParticle(particles.pop()); }
+
+  // ---------- Fase 3 art constants ----------
+  // Parallax / sparkle / speed-line colours (art-bible §2.2).
+  const C3 = {
+    skylineFar:  "#2a2147",
+    skylineMid:  "#382a5e",
+    towerGlow:   "rgba(255,158,44,0.10)",
+    starBig:     "rgba(255,255,255,0.85)",
+    starSmall:   "rgba(180,190,255,0.45)",
+  };
+
+  // ---------- SVG character bitmaps (art-bible §6) ----------
+  // Pre-rendered once at boot from inline SVG data-URIs, then blitted with one
+  // drawImage per frame. ViewBox 0 0 48 64 (run/jump), 0 0 56 34 (slide).
+  // Anchor = bottom-centre, so dx = p.x - dw/2, dy = p.y - dh.
+  // Each SVG factory takes (base, shade) so the rewind-tinted variants reuse
+  // the exact same geometry — just a recolour.
+  // POSE A — linkerbeen voor
+  const SVG_RUN_A = (b, s) =>
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 64">' +
+    // achterste ledematen (schaduwkleur)
+    '<line x1="27" y1="41" x2="31" y2="50" stroke="' + s + '" stroke-width="5" stroke-linecap="round"/>' +
+    '<line x1="31" y1="50" x2="33" y2="56" stroke="' + s + '" stroke-width="5" stroke-linecap="round"/>' +
+    '<line x1="29" y1="22" x2="35" y2="30" stroke="' + s + '" stroke-width="4" stroke-linecap="round"/>' +
+    // romp
+    '<rect x="17" y="19" width="14" height="22" rx="4" fill="' + b + '"/>' +
+    // voorste ledematen (basiskleur)
+    '<line x1="21" y1="41" x2="15" y2="60" stroke="' + b + '" stroke-width="5" stroke-linecap="round"/>' +
+    '<line x1="19" y1="22" x2="13" y2="32" stroke="' + b + '" stroke-width="4" stroke-linecap="round"/>' +
+    // hoofd + visor
+    '<circle cx="24" cy="12" r="9" fill="' + b + '"/>' +
+    '<rect x="20" y="9" width="8" height="3" rx="1.5" fill="#0a0e27"/>' +
+    '</svg>';
+  // POSE B — rechterbeen voor (ledematen gespiegeld, romp/hoofd identiek)
+  const SVG_RUN_B = (b, s) =>
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 64">' +
+    '<line x1="21" y1="41" x2="17" y2="50" stroke="' + s + '" stroke-width="5" stroke-linecap="round"/>' +
+    '<line x1="17" y1="50" x2="15" y2="56" stroke="' + s + '" stroke-width="5" stroke-linecap="round"/>' +
+    '<line x1="19" y1="22" x2="13" y2="30" stroke="' + s + '" stroke-width="4" stroke-linecap="round"/>' +
+    '<rect x="17" y="19" width="14" height="22" rx="4" fill="' + b + '"/>' +
+    '<line x1="27" y1="41" x2="33" y2="60" stroke="' + b + '" stroke-width="5" stroke-linecap="round"/>' +
+    '<line x1="29" y1="22" x2="35" y2="32" stroke="' + b + '" stroke-width="4" stroke-linecap="round"/>' +
+    '<circle cx="24" cy="12" r="9" fill="' + b + '"/>' +
+    '<rect x="20" y="9" width="8" height="3" rx="1.5" fill="#0a0e27"/>' +
+    '</svg>';
+  // JUMP — benen ingetrokken, armen uit balans (één pose, geen loop)
+  const SVG_JUMP = (b, s) =>
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 64">' +
+    '<line x1="24" y1="41" x2="26" y2="49" stroke="' + s + '" stroke-width="5" stroke-linecap="round"/>' +
+    '<line x1="26" y1="49" x2="28" y2="55" stroke="' + s + '" stroke-width="5" stroke-linecap="round"/>' +
+    '<line x1="29" y1="22" x2="37" y2="18" stroke="' + s + '" stroke-width="4" stroke-linecap="round"/>' +
+    '<rect x="17" y="19" width="14" height="22" rx="4" fill="' + b + '"/>' +
+    '<line x1="24" y1="41" x2="22" y2="49" stroke="' + b + '" stroke-width="5" stroke-linecap="round"/>' +
+    '<line x1="22" y1="49" x2="20" y2="55" stroke="' + b + '" stroke-width="5" stroke-linecap="round"/>' +
+    '<line x1="19" y1="22" x2="11" y2="18" stroke="' + b + '" stroke-width="4" stroke-linecap="round"/>' +
+    '<circle cx="24" cy="12" r="9" fill="' + b + '"/>' +
+    '<rect x="20" y="9" width="8" height="3" rx="1.5" fill="#0a0e27"/>' +
+    '</svg>';
+  // SLIDE — horizontale, lage pose. Eigen bredere/lagere viewBox 56 x 34.
+  const SVG_SLIDE = (b, s) =>
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 34">' +
+    // achterste been gestrekt naar achteren (schaduw)
+    '<line x1="34" y1="22" x2="50" y2="26" stroke="' + s + '" stroke-width="6" stroke-linecap="round"/>' +
+    '<line x1="30" y1="18" x2="22" y2="24" stroke="' + s + '" stroke-width="4" stroke-linecap="round"/>' +
+    // romp horizontaal
+    '<rect x="6" y="14" width="28" height="12" rx="4" fill="' + b + '"/>' +
+    // voorste been + arm vooruit
+    '<line x1="32" y1="24" x2="48" y2="30" stroke="' + b + '" stroke-width="6" stroke-linecap="round"/>' +
+    '<line x1="12" y1="20" x2="2" y2="16" stroke="' + b + '" stroke-width="4" stroke-linecap="round"/>' +
+    // hoofd vooraan laag + visor
+    '<circle cx="14" cy="14" r="8" fill="' + b + '"/>' +
+    '<rect x="8" y="12" width="8" height="3" rx="1.5" fill="#0a0e27"/>' +
+    '</svg>';
+
+  // helper: maak een Image uit een SVG-string, klaar voor drawImage
+  function svgImage(svgStr) {
+    const img = new Image();
+    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgStr);
+    return img;
+  }
+  const imgRunA  = svgImage(SVG_RUN_A("#ffd35c", "#e0a838"));
+  const imgRunB  = svgImage(SVG_RUN_B("#ffd35c", "#e0a838"));
+  const imgJump  = svgImage(SVG_JUMP("#ffd35c", "#e0a838"));
+  const imgSlide = svgImage(SVG_SLIDE("#ffd35c", "#e0a838"));
+  const imgRunA_rw = svgImage(SVG_RUN_A("#ff9e2c", "#cc7d1f"));
+  const imgRunB_rw = svgImage(SVG_RUN_B("#ff9e2c", "#cc7d1f"));
+  const imgJump_rw = svgImage(SVG_JUMP("#ff9e2c", "#cc7d1f"));
+  const imgSlide_rw = svgImage(SVG_SLIDE("#ff9e2c", "#cc7d1f"));
+
+  // ---------- parallax layers (art-bible §7) ----------
+  // Built once at boot + on resize. Module-scope (cosmetic, NOT in ringbuffer).
+  let LAYER_W = 0;
+  let starsL0 = [], towersL1 = [], towersL2 = [];
+  function makeTowers(count, layerW, minH, maxH, minW, maxW, withGlow) {
+    const arr = [];
+    for (let i = 0; i < count; i++) {
+      arr.push({
+        x: Math.random() * layerW,
+        w: minW + Math.random() * (maxW - minW),
+        h: minH + Math.random() * (maxH - minH),
+        glow: withGlow && Math.random() < 0.6
+      });
+    }
+    return arr;
+  }
+  function makeStars(count, layerW, bandH) {
+    const arr = [];
+    for (let i = 0; i < count; i++) {
+      arr.push({
+        x: Math.random() * layerW,
+        y: Math.random() * bandH,
+        big: Math.random() < 0.35
+      });
+    }
+    return arr;
+  }
+  function buildParallax() {
+    LAYER_W = Math.max(W * 2, 1400);
+    starsL0  = makeStars(40, LAYER_W, H * 0.26);
+    towersL1 = makeTowers(14, LAYER_W, 40, 90,  24, 64, false);
+    towersL2 = makeTowers(20, LAYER_W, 70, 150, 28, 70, true);
+  }
+
+  // ---------- input ----------
+  const keys = {};
+  const input = { left:false, right:false, jump:false, slide:false, rewindHold:false };
+  window.addEventListener("keydown", e => {
+    if (e.repeat) return;
+    const k = e.key.toLowerCase();
+    keys[k] = true;
+    if (k === "arrowleft" || k === "a") tryLane(-1);
+    else if (k === "arrowright" || k === "d") tryLane(1);
+    else if (k === "arrowup" || k === "w" || k === " ") tryJump();
+    else if (k === "arrowdown" || k === "s") trySlide();
+    else if (k === "r" || k === "shift") input.rewindHold = true;
+    if (k === " ") e.preventDefault();
+  });
+  window.addEventListener("keyup", e => {
+    const k = e.key.toLowerCase();
+    keys[k] = false;
+    if (k === "r" || k === "shift") input.rewindHold = false;
+  });
+
+  // touch — swipes on canvas, hold for rewind button
+  let touchStart = null;
+  canvas.addEventListener("pointerdown", e => {
+    touchStart = { x: e.clientX, y: e.clientY, t: performance.now() };
+  });
+  canvas.addEventListener("pointerup", e => {
+    if (!touchStart) return;
+    const dx = e.clientX - touchStart.x, dy = e.clientY - touchStart.y;
+    const dt = performance.now() - touchStart.t;
+    const adx = Math.abs(dx), ady = Math.abs(dy);
+    if (dt < 350 && Math.max(adx, ady) < 18) {
+      tryJump(); // tap = jump
+    } else if (adx > ady) {
+      if (dx > 28) tryLane(1);
+      else if (dx < -28) tryLane(-1);
+    } else {
+      if (dy < -28) tryJump();
+      else if (dy > 28) trySlide();
+    }
+    touchStart = null;
+  });
+  const rewindBtn = document.getElementById("rewindBtn");
+  const setBtnDown = v => {
+    input.rewindHold = v;
+    rewindBtn.classList.toggle("active", v);
+  };
+  rewindBtn.addEventListener("pointerdown", e => { e.preventDefault(); setBtnDown(true); });
+  rewindBtn.addEventListener("pointerup", e => { e.preventDefault(); setBtnDown(false); });
+  rewindBtn.addEventListener("pointerleave", () => setBtnDown(false));
+  rewindBtn.addEventListener("pointercancel", () => setBtnDown(false));
+
+  function tryLane(d) {
+    if (!state || !state.running || state.rewinding) return;
+    state.lane = Math.max(0, Math.min(LANES - 1, state.lane + d));
+  }
+  function tryJump() {
+    if (!state || !state.running || state.rewinding) return;
+    if (state.jumping || state.sliding) return;
+    state.jumping = true;
+    state.jumpUntil = state.t + JUMP_S;
+    state.vy = 1; // marker; we compute y from sine of jump progress
+  }
+  function trySlide() {
+    if (!state || !state.running || state.rewinding) return;
+    if (state.jumping || state.sliding) return;
+    state.sliding = true;
+    state.slideUntil = state.t + SLIDE_S;
+  }
+
+  // ---------- spawning ----------
+  // Driven by the active level config: which obstacle types are allowed,
+  // and how dense coins are. Empty obstacleTypes => coin-only level.
+  function spawnAt(z) {
+    const cfg = state.cfg;
+    const types = cfg.obstacleTypes;
+    const coinOnly = !types || types.length === 0;
+    // coinDensity is the share of spawns that become a coin row.
+    const wantCoin = coinOnly || Math.random() < cfg.coinDensity;
+
+    if (!wantCoin && types.length) {
+      const pick = types[(Math.random() * types.length) | 0];
+      if (pick === "combo") {
+        // combo: block two of three lanes — leaves exactly one safe path
+        const safe = (Math.random() * LANES) | 0;
+        for (let lane = 0; lane < LANES; lane++) {
+          if (lane === safe) continue;
+          const o = getObs();
+          o.z = z; o.lane = lane; o.type = 0; o.alive = true;
+          state.obstacles.push(o);
+        }
+      } else {
+        const o = getObs();
+        o.z = z;
+        o.lane = (Math.random() * LANES) | 0;
+        o.type = OBST_INDEX[pick];   // 0 block, 1 low, 2 high
+        o.alive = true;
+        state.obstacles.push(o);
+      }
+      return;
+    }
+
+    // coin row in one lane. On dense levels, occasionally fill a second lane too.
+    const baseN = coinOnly ? 5 : 3;
+    const extra = coinOnly ? 4 : 3;
+    const placeRow = (lane) => {
+      const n = baseN + ((Math.random() * extra) | 0);
+      for (let i = 0; i < n; i++) {
+        const c = getCoin();
+        c.z = z + i * 1.2;
+        c.lane = lane;
+        c.y = 0.4 + (Math.random() < 0.3 ? 0.8 : 0); // sometimes mid-air row
+        c.alive = true;
+        state.coins.push(c);
+      }
+    };
+    const lane = (Math.random() * LANES) | 0;
+    placeRow(lane);
+    if (coinOnly && Math.random() < 0.5) {
+      placeRow((lane + 1 + ((Math.random() * (LANES - 1)) | 0)) % LANES);
+    }
+  }
+
+  // ---------- snapshot / rewind ----------
+  function snapshot() {
+    return {
+      distance: state.distance,
+      elapsed: state.elapsed,
+      lane: state.lane,
+      laneT: state.laneT,
+      y: state.y,
+      jumping: state.jumping, jumpUntil: state.jumpUntil - state.t,
+      sliding: state.sliding, slideUntil: state.slideUntil - state.t,
+      score: state.score,
+      // store obstacles/coins as minimal copies
+      obs: state.obstacles.map(o => ({ z:o.z, lane:o.lane, type:o.type, alive:o.alive })),
+      coins: state.coins.map(c => ({ z:c.z, lane:c.lane, y:c.y, alive:c.alive })),
+      nextSpawnZ: state.nextSpawnZ, speed: state.speed,
+    };
+  }
+  function restore(s) {
+    state.distance = s.distance;
+    state.elapsed = s.elapsed;
+    state.lane = s.lane; state.laneT = s.laneT;
+    state.y = s.y;
+    state.jumping = s.jumping; state.jumpUntil = state.t + s.jumpUntil;
+    state.sliding = s.sliding; state.slideUntil = state.t + s.slideUntil;
+    state.score = s.score;
+    // release pooled
+    while (state.obstacles.length) putObs(state.obstacles.pop());
+    while (state.coins.length) putCoin(state.coins.pop());
+    for (const o of s.obs) { const x = getObs(); x.z=o.z; x.lane=o.lane; x.type=o.type; x.alive=o.alive; state.obstacles.push(x); }
+    for (const c of s.coins) { const x = getCoin(); x.z=c.z; x.lane=c.lane; x.y=c.y; x.alive=c.alive; state.coins.push(x); }
+    state.nextSpawnZ = s.nextSpawnZ; state.speed = s.speed;
+  }
+
+  // ---------- collision ----------
+  function checkCollisions() {
+    // player occupies z=0, lane = state.lane, y = state.y, sliding lowers head
+    for (const o of state.obstacles) {
+      if (!o.alive) continue;
+      if (o.z > 1.0 || o.z < -0.6) continue;
+      if (o.lane !== state.lane) continue;
+      // type 0 block — needs lane change or jump>0.6
+      // type 1 low — must jump
+      // type 2 high — must slide
+      if (o.type === 0) {
+        if (state.y < 0.9) return o;
+      } else if (o.type === 1) {
+        if (state.y < 0.55) return o;
+      } else if (o.type === 2) {
+        if (!state.sliding) return o;
+      }
+    }
+    // coin pickup
+    for (const c of state.coins) {
+      if (!c.alive) continue;
+      if (c.z > 0.8 || c.z < -0.4) continue;
+      if (c.lane !== state.lane) continue;
+      const dy = Math.abs(c.y - state.y);
+      if (dy < 0.7) {
+        c.alive = false;
+        state.score += 5;
+        // Fase 3 §10.2 — sparkle burst at the coin's screen position.
+        // -22*s matches the y-offset drawCoin() uses for the coin disc.
+        const cp = project(c.z, c.y, c.lane);
+        spawnCoinBurst(cp.x, cp.y - 22 * cp.s);
+      }
+    }
+    return null;
+  }
+
+  // ---------- coin sparkle particles (Fase 3 §10) ----------
+  const TAU = Math.PI * 2;
+  function spawnCoinBurst(sx, sy) {
+    for (let i = 0; i < 8; i++) {
+      if (particles.length >= PARTICLE_CAP) break;   // cap is a safety net
+      const p = getParticle();
+      const ang = Math.random() * TAU;
+      const spd = 60 + Math.random() * 100;
+      p.x = sx; p.y = sy;
+      p.vx = Math.cos(ang) * spd;
+      p.vy = Math.sin(ang) * spd - 30;               // slight upward bias
+      p.maxLife = 0.35 + Math.random() * 0.25;
+      p.life = p.maxLife;
+      p.size = 2 + Math.random() * 2;
+      p.color = Math.random() < 0.3 ? "#ffb84d" : "#fff4cc";
+      p.alive = true;
+      particles.push(p);
+    }
+  }
+  function updateParticles(dt) {
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.life -= dt;
+      if (p.life <= 0) { putParticle(particles.splice(i, 1)[0]); continue; }
+      p.vy += 320 * dt;            // gravity — particles fall, feels tactile
+      p.vx *= 0.92; p.vy *= 0.92;  // drag
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+    }
+  }
+
+  // ---------- update ----------
+  function update(dt) {
+    state.t += dt;
+    state.dt = dt;
+
+    if (state.rewinding) {
+      // pull back through buffer
+      if (state.buffer.length > 1) {
+        // step back at REWIND_RATE * BUFFER_FPS frames per sec
+        state.bufferAcc += dt * REWIND_RATE * BUFFER_FPS;
+        while (state.bufferAcc >= 1 && state.buffer.length > 1) {
+          state.buffer.pop();
+          state.bufferAcc -= 1;
+        }
+        restore(state.buffer[state.buffer.length - 1]);
+      }
+      if (!input.rewindHold || state.buffer.length <= 1) {
+        // end rewind
+        state.rewinding = false;
+        state.rewindMeter = 0; // consumed
+        state.rewindCooldown = REWIND_POST_LOCK_S;
+        document.getElementById("rewindOverlay").classList.remove("on");
+        // build ghost line: use snapshot poses from buffer
+        const pts = [];
+        for (let i = 0; i < state.buffer.length; i += 2) {
+          const s = state.buffer[i];
+          pts.push({ lane: s.lane, y: s.y, dz: state.buffer.length - i });
+        }
+        state.ghost = { pts, life: 4 };
+      }
+      return;
+    }
+
+    if (state.rewindCooldown > 0) state.rewindCooldown -= dt;
+
+    // difficulty curve — speed driven by explicit speedAt() on elapsed time
+    state.elapsed += dt;
+    state.speed = speedAt(state.cfg, state.elapsed);
+
+    state.distance += state.speed * dt;
+
+    // jump arc — half-sine 0..1..0 over JUMP_S
+    if (state.jumping) {
+      const remain = state.jumpUntil - state.t;
+      const progress = 1 - remain / JUMP_S;
+      state.y = Math.sin(progress * Math.PI) * 1.4;
+      if (remain <= 0) { state.jumping = false; state.y = 0; }
+    } else {
+      state.y = 0;
+    }
+    if (state.sliding && state.t > state.slideUntil) state.sliding = false;
+
+    // run-cycle animation phase — stride frequency scales with speed (§6.4).
+    // speed runs ~6..18 → ~3.3..10 steps/s.
+    const stepsPerSec = state.speed * 0.55;
+    state.animPhase = (state.animPhase + dt * stepsPerSec) % 1;
+
+    // cosmetic particles — module-scope, never enters the ringbuffer
+    updateParticles(dt);
+
+    // smooth lane T toward lane
+    state.laneT += (state.lane - state.laneT) * Math.min(1, dt * 14);
+
+    // advance world: obstacles/coins move toward player (their z decreases)
+    for (const o of state.obstacles) o.z -= state.speed * dt;
+    for (const c of state.coins) c.z -= state.speed * dt;
+
+    // spawn ahead — interval comes from the difficulty curve
+    state.nextSpawnZ -= state.speed * dt;
+    while (state.nextSpawnZ < SPAWN_AHEAD) {
+      spawnAt(SPAWN_AHEAD + Math.random() * 4);
+      const gap = spawnIntervalAt(state.cfg, state.elapsed, state.speed);
+      state.nextSpawnZ += Math.max(2.5, gap) + Math.random() * 2;
+    }
+
+    // despawn
+    for (let i = state.obstacles.length - 1; i >= 0; i--) {
+      if (state.obstacles[i].z < -DESPAWN_BEHIND) putObs(state.obstacles.splice(i, 1)[0]);
+    }
+    for (let i = state.coins.length - 1; i >= 0; i--) {
+      if (state.coins[i].z < -DESPAWN_BEHIND || !state.coins[i].alive) putCoin(state.coins.splice(i, 1)[0]);
+    }
+
+    // collision
+    const hit = checkCollisions();
+    if (hit) {
+      doGameOver();
+      return;
+    }
+
+    // ringbuffer snapshot at BUFFER_FPS
+    state.bufferAcc += dt * BUFFER_FPS;
+    while (state.bufferAcc >= 1) {
+      state.buffer.push(snapshot());
+      if (state.buffer.length > BUFFER_FRAMES) state.buffer.shift();
+      state.bufferAcc -= 1;
+    }
+
+    // meter charge
+    state.rewindMeter = Math.min(1, state.rewindMeter + dt / REWIND_FILL_S);
+
+    // rewind trigger
+    if (input.rewindHold && state.rewindMeter >= 1 && state.rewindCooldown <= 0 && state.buffer.length > 4) {
+      state.rewinding = true;
+      state.rewindUsed = true;
+      state.bufferAcc = 0;
+      document.getElementById("rewindOverlay").classList.add("on");
+    }
+
+    // ghost life
+    if (state.ghost) {
+      state.ghost.life -= dt;
+      if (state.ghost.life <= 0) state.ghost = null;
+    }
+
+    // win-condition check (challenge levels only)
+    checkWin();
+  }
+
+  // ---------- win / end conditions ----------
+  function checkWin() {
+    const win = state.cfg.win;
+    if (!win || win.type === "endless") return;
+    if (state.elapsed < (win.seconds || 0)) return;
+    if (win.type === "surviveAndRewind" && !state.rewindUsed) {
+      // duration reached but rewind never used — keep running until they use it
+      return;
+    }
+    doLevelComplete();
+  }
+
+  function doGameOver() {
+    state.running = false;
+    state.gameOver = true;
+    saveBest(state.score);
+    const r = document.getElementById("result");
+    document.getElementById("resultKicker").textContent =
+      state.mode === "endless" ? "GAME OVER" : "LEVEL FAILED";
+    document.getElementById("resultTitle").textContent = state.cfg.name;
+    let txt = "Score <b>" + state.score + "</b> &middot; Distance <b>" +
+              state.distance.toFixed(0) + "m</b>";
+    if (state.mode === "endless") {
+      txt += "<br><br>Best score: <b>" + bestScore() + "</b>";
+    } else {
+      txt += "<br><br>Survived <b>" + state.elapsed.toFixed(0) + "s</b> / " +
+             (state.cfg.win.seconds || 0) + "s";
+    }
+    document.getElementById("resultText").innerHTML = txt;
+    document.getElementById("retryBtn").textContent = "RETRY";
+    r.classList.add("show");
+  }
+
+  function doLevelComplete() {
+    state.running = false;
+    state.won = true;
+    saveBest(state.score);
+    markLevelDone(state.mode);
+    const r = document.getElementById("result");
+    document.getElementById("resultKicker").textContent = "LEVEL COMPLETE";
+    document.getElementById("resultTitle").textContent = state.cfg.name;
+    document.getElementById("resultText").innerHTML =
+      "Cleared in <b>" + state.elapsed.toFixed(0) + "s</b><br>" +
+      "Score <b>" + state.score + "</b> &middot; Distance <b>" +
+      state.distance.toFixed(0) + "m</b>";
+    document.getElementById("retryBtn").textContent = "PLAY AGAIN";
+    r.classList.add("show");
+  }
+
+  // ---------- render ----------
+  function laneX(laneT) {
+    const w = W * LANE_W_FRAC;
+    const left = (W - w) / 2;
+    return left + (laneT + 0.5) * (w / LANES);
+  }
+  function project(z, y, laneT) {
+    // perspective: z=0 at FLOOR_Y, larger z toward HORIZON
+    const horizonY = H * HORIZON_Y_FRAC;
+    const floorY = H * FLOOR_Y_FRAC;
+    const t = z / (z + 8);
+    const screenY = floorY + (horizonY - floorY) * t;
+    const scale = 1 - t * 0.9;
+    // lane x interpolated toward center as t grows
+    const centerX = W / 2;
+    const baseX = laneX(laneT);
+    const x = baseX + (centerX - baseX) * t;
+    const yOffset = -y * 22 * scale;
+    return { x, y: screenY + yOffset, s: scale };
+  }
+  function render() {
+    ctx.clearRect(0, 0, W, H);
+
+    // sky gradient handled by CSS, but draw distant glow
+    const horizonY = H * HORIZON_Y_FRAC;
+    const grd = ctx.createLinearGradient(0, horizonY - 60, 0, H);
+    grd.addColorStop(0, "#1a1f3a");
+    grd.addColorStop(1, "#0a0e27");
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, horizonY - 60, W, H);
+
+    // parallax background (Fase 3 §7) — after sky, before horizon/lanes
+    drawParallax();
+
+    // horizon line glow
+    ctx.strokeStyle = "rgba(255,158,44,0.25)";
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, horizonY); ctx.lineTo(W, horizonY); ctx.stroke();
+
+    // lanes (3 strips with edge lines)
+    const w = W * LANE_W_FRAC;
+    const left = (W - w) / 2;
+    const floorY = H * FLOOR_Y_FRAC;
+    ctx.fillStyle = COLORS.lane;
+    for (let i = 0; i < LANES; i++) {
+      // draw lane as trapezoid from horizon center to floor
+      const lx1 = left + i * (w / LANES);
+      const lx2 = left + (i + 1) * (w / LANES);
+      const cx = W / 2;
+      ctx.beginPath();
+      ctx.moveTo(lx1, floorY);
+      ctx.lineTo(lx2, floorY);
+      ctx.lineTo(cx + (lx2 - cx) * 0.1, horizonY);
+      ctx.lineTo(cx + (lx1 - cx) * 0.1, horizonY);
+      ctx.closePath();
+      ctx.fill();
+    }
+    // lane separators — animated dashes
+    ctx.strokeStyle = "rgba(255,255,255,0.15)";
+    ctx.lineWidth = 2;
+    const dashOff = (state.distance * 8) % 40;
+    for (let i = 1; i < LANES; i++) {
+      const lx = left + i * (w / LANES);
+      const cx = W / 2;
+      ctx.beginPath();
+      const top = { x: cx + (lx - cx) * 0.1, y: horizonY };
+      const bot = { x: lx, y: floorY };
+      // dashed manually
+      const steps = 20;
+      for (let s = 0; s < steps; s++) {
+        const a = s / steps, b = (s + 0.5) / steps;
+        const ax = top.x + (bot.x - top.x) * a;
+        const ay = top.y + (bot.y - top.y) * a;
+        const bx = top.x + (bot.x - top.x) * b;
+        const by = top.y + (bot.y - top.y) * b;
+        const off = ((s + dashOff/8) % 2) < 1;
+        if (off) { ctx.moveTo(ax, ay); ctx.lineTo(bx, by); }
+      }
+      ctx.stroke();
+    }
+
+    // ghost line
+    if (state.ghost && state.ghost.pts.length > 1) {
+      ctx.strokeStyle = "rgba(255,158,44," + Math.min(0.9, state.ghost.life / 4) + ")";
+      ctx.lineWidth = 3;
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath();
+      for (let i = 0; i < state.ghost.pts.length; i++) {
+        const g = state.ghost.pts[i];
+        const p = project(g.dz * 0.4, g.y, g.lane);
+        if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // sort by z descending so far things draw first
+    const all = [];
+    for (const o of state.obstacles) if (o.alive) all.push({kind:"o", e:o});
+    for (const c of state.coins) if (c.alive) all.push({kind:"c", e:c});
+    all.sort((a, b) => b.e.z - a.e.z);
+    for (const item of all) {
+      const e = item.e;
+      if (e.z < -1.5 || e.z > 60) continue;
+      const p = project(e.z, item.kind === "c" ? e.y : 0, e.lane);
+      if (item.kind === "o") drawObstacle(p, e.type);
+      else drawCoin(p);
+    }
+
+    // player
+    const pp = project(0, state.y, state.laneT);
+    drawPlayer(pp);
+
+    // foreground flair (Fase 3) — speed-lines, then sparkle particles, on top
+    drawSpeedLines();
+    drawParticles();
+  }
+
+  // ---------- parallax render (Fase 3 §7) ----------
+  function drawParallax() {
+    const horizonY = H * HORIZON_Y_FRAC;
+    if (!LAYER_W) return;
+
+    // --- laag 0: sterren (scroll-ratio 0.04, traagst) ---
+    const ox0 = -(state.distance * 0.04) % LAYER_W;
+    for (let pass = 0; pass < 2; pass++) {
+      const base = ox0 + pass * LAYER_W;
+      for (const s of starsL0) {
+        const x = base + s.x;
+        if (x < -4 || x > W + 4) continue;          // off-screen cull
+        ctx.fillStyle = s.big ? C3.starBig : C3.starSmall;
+        const sz = s.big ? 2 : 1.5;
+        ctx.fillRect(x, s.y, sz, sz);
+      }
+    }
+
+    // --- laag 1: verre skyline (scroll-ratio 0.10) ---
+    const ox1 = -(state.distance * 0.10) % LAYER_W;
+    ctx.fillStyle = C3.skylineFar;
+    for (let pass = 0; pass < 2; pass++) {
+      const base = ox1 + pass * LAYER_W;
+      for (const t of towersL1) {
+        const x = base + t.x;
+        if (x < -t.w || x > W) continue;
+        ctx.fillRect(x, horizonY - t.h, t.w, t.h);
+      }
+    }
+
+    // --- laag 2: midden-torens (scroll-ratio 0.22, snelst) ---
+    const ox2 = -(state.distance * 0.22) % LAYER_W;
+    ctx.fillStyle = C3.skylineMid;
+    for (let pass = 0; pass < 2; pass++) {
+      const base = ox2 + pass * LAYER_W;
+      for (const t of towersL2) {
+        const x = base + t.x;
+        if (x < -t.w || x > W) continue;
+        ctx.fillRect(x, horizonY - t.h + 18, t.w, t.h); // +18: dips below horizon
+      }
+    }
+    // venster-glow as a separate pass so the fillStyle only switches once
+    ctx.fillStyle = C3.towerGlow;
+    for (let pass = 0; pass < 2; pass++) {
+      const base = ox2 + pass * LAYER_W;
+      for (const t of towersL2) {
+        if (!t.glow) continue;
+        const x = base + t.x;
+        if (x < -t.w || x > W) continue;
+        for (let wy = horizonY - t.h + 26; wy < horizonY + 10; wy += 12) {
+          for (let wx = x + 4; wx < x + t.w - 3; wx += 9) {
+            ctx.fillRect(wx, wy, 3, 4);
+          }
+        }
+      }
+    }
+  }
+
+  // ---------- speed lines (Fase 3 §9) ----------
+  // Pure procedural, no per-object state, no allocation. Early-returns under 200m.
+  function drawSpeedLines() {
+    const a = Math.max(0, Math.min(1, (state.distance - 200) / 40)); // fade-in 200..240m
+    if (a <= 0) return;
+
+    const cx = W / 2;
+    const horizonY = H * HORIZON_Y_FRAC;
+    const N = 10;
+    const phase = (state.distance * 0.9) % 1;       // scrolls with world speed
+
+    ctx.lineCap = "round";
+    for (let i = 0; i < N; i++) {
+      const seed = i * 0.61803;                     // golden-ratio spread
+      const ang  = (seed + phase * 0.15) % 1;
+      const theta = ang * Math.PI * 2;
+      const dirX = Math.cos(theta), dirY = Math.sin(theta) * 0.6; // slightly flattened
+      const travel = ((phase + seed) % 1);          // 0 = at vanishing point, 1 = edge
+      const near = 60 + travel * (W * 0.7);
+      const len  = 60 + (i % 5) * 16;               // 60..124 px
+      const x1 = cx + dirX * near;
+      const y1 = horizonY + dirY * near;
+      const x2 = cx + dirX * (near + len);
+      const y2 = horizonY + dirY * (near + len);
+      const edgeFade = Math.min(1, travel / 0.15, (1 - travel) / 0.2);
+      const warm = (i % 10) < 3;
+      ctx.strokeStyle = warm
+        ? "rgba(255,211,92," + (0.35 * a * edgeFade).toFixed(3) + ")"
+        : "rgba(255,255,255," + (0.55 * a * edgeFade).toFixed(3) + ")";
+      ctx.lineWidth = 1.5 + (i % 3) * 0.5;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+  }
+
+  // ---------- particle render (Fase 3 §10.3) ----------
+  function drawParticles() {
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i];
+      const r = p.life / p.maxLife;               // 1 -> 0
+      ctx.globalAlpha = r;
+      ctx.fillStyle = p.color;
+      const sz = p.size * (0.4 + 0.6 * r);
+      ctx.fillRect(p.x - sz/2, p.y - sz/2, sz, sz);
+    }
+    ctx.globalAlpha = 1;                          // ALWAYS reset — alpha leaks otherwise
+  }
+  // Fase 3 §8 — glow budget: shadowBlur only on coin/obstacle/player, only at
+  // p.s >= 0.5 (near half of the track), reset to 0 immediately after the fill.
+  function drawObstacle(p, type) {
+    const s = p.s;
+    let w = 60 * s, h = 60 * s, yOff = 0;
+    if (type === 1) { h = 22 * s; yOff = 0; }            // low — short
+    else if (type === 2) { h = 26 * s; yOff = -54 * s; } // high — floating bar
+    const x = p.x - w/2, y = p.y - h + yOff;
+    // glow-laag
+    if (s >= 0.5) { ctx.shadowColor = "#ff5e3a"; ctx.shadowBlur = 10 * s; }
+    ctx.fillStyle = "#ff5e3a";
+    ctx.fillRect(x, y, w, h);
+    ctx.shadowBlur = 0;                                  // reset immediately
+    // 2-tone shade (no shadow): darker lower half
+    ctx.fillStyle = "#c93a1f";
+    ctx.fillRect(x, y + h * 0.55, w, h * 0.45);
+    // hot top edge (no shadow)
+    ctx.fillStyle = "rgba(255,180,140,0.6)";
+    ctx.fillRect(x, y, w, Math.max(2, 3 * s));
+  }
+  function drawCoin(p) {
+    const s = p.s;
+    if (s >= 0.5) { ctx.shadowColor = "#ffd35c"; ctx.shadowBlur = 12 * s; }
+    ctx.fillStyle = "#ffd35c";
+    ctx.beginPath();
+    ctx.arc(p.x, p.y - 22 * s, 9 * s, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;                                  // reset immediately
+    // sharp glans-stip with a subtle per-coin twinkle (§10.5) — cheap, no shadow
+    const twinkle = 0.6 + 0.4 * Math.sin(state.t * 4 + p.x * 0.05);
+    ctx.fillStyle = "#fff4cc";
+    ctx.globalAlpha = twinkle;
+    ctx.beginPath();
+    ctx.arc(p.x - 3 * s, p.y - 25 * s, 2.5 * s, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;                                 // reset — alpha leaks otherwise
+  }
+  // SVG character (Fase 3 §6) — one drawImage blit per frame, scaled by p.s.
+  function drawPlayer(p) {
+    const s = p.s, rw = state.rewinding;
+    let img, dw, dh;
+    if (state.jumping) {
+      img = rw ? imgJump_rw : imgJump;
+      dw = 42 * s; dh = 56 * s;
+    } else if (state.sliding) {
+      img = rw ? imgSlide_rw : imgSlide;
+      dw = 50 * s; dh = 30 * s;                          // wider, lower slide pose
+    } else {
+      // 2-frame run loop: A while phase < 0.5, B after
+      const a = state.animPhase < 0.5;
+      img = rw ? (a ? imgRunA_rw : imgRunB_rw) : (a ? imgRunA : imgRunB);
+      dw = 42 * s; dh = 56 * s;
+    }
+    // subtle vertical bob synced to the stride (cheap juice, §6.4)
+    const bob = (state.running && !state.jumping && !state.sliding)
+      ? Math.abs(Math.sin(state.animPhase * Math.PI)) * 1.5 * s : 0;
+    const dy = p.y - dh - bob;
+    // defensive fallback: if a bitmap hasn't decoded yet, draw the old block
+    if (!img || !img.complete || img.naturalWidth === 0) {
+      ctx.fillStyle = "#ffd35c";
+      ctx.beginPath();
+      ctx.roundRect(p.x - dw/2, p.y - dh, dw, dh, 6);
+      ctx.fill();
+      return;
+    }
+    // time-reverse echo trails during rewind: 2-3 ghost blits on recent buffer
+    // positions, falling alpha. Only runs while rewinding — off the hot path.
+    if (rw && state.buffer.length > 6) {
+      const alphas = [0.35, 0.15, 0.06];
+      for (let k = 0; k < alphas.length; k++) {
+        const bi = state.buffer.length - 1 - (k + 1) * 6;
+        if (bi < 0) break;
+        const bs = state.buffer[bi];
+        const ep = project(0, bs.y, bs.lane);
+        ctx.globalAlpha = alphas[k];
+        ctx.drawImage(img, ep.x - dw/2, ep.y - dh - bob, dw, dh);
+      }
+      ctx.globalAlpha = 1;
+    }
+    // glow always on (single object) — stronger during rewind
+    ctx.shadowColor = rw ? "#ff9e2c" : "#ffd35c";
+    ctx.shadowBlur  = rw ? 18 : 14;
+    ctx.drawImage(img, p.x - dw/2, dy, dw, dh);
+    ctx.shadowBlur = 0;                                  // reset immediately
+  }
+
+  // ---------- UI ----------
+  const meterFill = document.getElementById("meterFill");
+  const scoreEl = document.getElementById("score");
+  const levelInfoEl = document.getElementById("levelInfo");
+  function fmtTime(sec) {
+    sec = Math.max(0, sec | 0);
+    const m = (sec / 60) | 0, s = sec % 60;
+    return (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s;
+  }
+  function syncUI() {
+    meterFill.style.width = (state.rewindMeter * 100).toFixed(0) + "%";
+    meterFill.classList.toggle("full", state.rewindMeter >= 1);
+    rewindBtn.disabled = !(state.running && state.rewindMeter >= 1 && state.rewindCooldown <= 0);
+    scoreEl.firstChild.nodeValue = state.score + " ";
+    // level info: countdown for challenge levels, elapsed for endless
+    if (state.running || state.gameOver || state.won) {
+      levelInfoEl.style.display = "block";
+      const cfg = state.cfg;
+      if (state.mode === "endless") {
+        levelInfoEl.firstChild.nodeValue = "ENDLESS ";
+        levelInfoEl.querySelector("small").textContent = fmtTime(state.elapsed);
+      } else {
+        const total = cfg.win.seconds || cfg.duration || 0;
+        levelInfoEl.firstChild.nodeValue = cfg.name.toUpperCase() + " ";
+        levelInfoEl.querySelector("small").textContent =
+          fmtTime(Math.max(0, total - state.elapsed));
+      }
+    } else {
+      levelInfoEl.style.display = "none";
+    }
+  }
+
+  // ---------- persistence (localStorage, all wrapped in try/catch) ----------
+  function bestScore() {
+    try { return parseInt(localStorage.getItem("rrBest") || "0", 10); }
+    catch (e) { return 0; }
+  }
+  function saveBest(s) {
+    try { if (s > bestScore()) localStorage.setItem("rrBest", String(s)); }
+    catch (e) { /* storage unavailable — ignore */ }
+  }
+  function doneLevels() {
+    try { return JSON.parse(localStorage.getItem("rrDone") || "{}") || {}; }
+    catch (e) { return {}; }
+  }
+  function isLevelDone(id) {
+    return !!doneLevels()[id];
+  }
+  function markLevelDone(id) {
+    try {
+      const d = doneLevels();
+      d[id] = true;
+      localStorage.setItem("rrDone", JSON.stringify(d));
+    } catch (e) { /* ignore */ }
+  }
+
+  // ---------- level selector menu ----------
+  const menuEl = document.getElementById("menu");
+  const resultEl = document.getElementById("result");
+  const levelListEl = document.getElementById("levelList");
+
+  function buildMenu() {
+    levelListEl.innerHTML = "";
+    const done = doneLevels();
+    // Endless first
+    levelListEl.appendChild(makeCard(LEVELS.endless, true, false));
+    // 8 challenge levels
+    LEVELS.levels.forEach((lvl, i) => {
+      levelListEl.appendChild(makeCard(lvl, false, !!done[lvl.id], i + 1));
+    });
+  }
+  function makeCard(cfg, isEndless, isDone, num) {
+    const card = document.createElement("button");
+    card.className = "lvlCard" + (isEndless ? " endless" : "") + (isDone ? " done" : "");
+    const badge = document.createElement("div");
+    badge.className = "badge";
+    badge.textContent = isEndless ? "∞" : (isDone ? "✓" : num);
+    const body = document.createElement("div");
+    body.className = "body";
+    const name = document.createElement("div");
+    name.className = "name"; name.textContent = cfg.name;
+    const desc = document.createElement("div");
+    desc.className = "desc"; desc.textContent = cfg.desc;
+    body.appendChild(name); body.appendChild(desc);
+    if (!isEndless) {
+      const status = document.createElement("div");
+      status.className = "status";
+      const dur = cfg.win.seconds || cfg.duration;
+      status.textContent = isDone ? "Completed" : (dur + "s challenge");
+      body.appendChild(status);
+    } else {
+      const status = document.createElement("div");
+      status.className = "status";
+      status.textContent = "Best score: " + bestScore();
+      body.appendChild(status);
+    }
+    card.appendChild(badge); card.appendChild(body);
+    card.addEventListener("click", () => startLevel(cfg));
+    return card;
+  }
+
+  function showMenu() {
+    buildMenu();
+    resultEl.classList.remove("show");
+    menuEl.classList.add("show");
+    levelInfoEl.style.display = "none";
+  }
+
+  // ---------- start / flow ----------
+  function startLevel(cfg) {
+    activeCfg = cfg;
+    state = freshState(cfg);
+    state.running = true;
+    clearParticles();   // particles live outside `state` — clear them per run
+    menuEl.classList.remove("show");
+    resultEl.classList.remove("show");
+    document.getElementById("rewindOverlay").classList.remove("on");
+  }
+
+  document.getElementById("retryBtn").addEventListener("click", () => startLevel(activeCfg));
+  document.getElementById("menuBtn").addEventListener("click", showMenu);
+
+  // ---------- loop ----------
+  let lastT = 0;
+  function frame(now) {
+    const dt = Math.min(0.05, (now - lastT) / 1000) || 0.016;
+    lastT = now;
+    if (state.running) update(dt);
+    render();
+    syncUI();
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- boot ----------
+  resize();                             // sizes canvas + builds parallax arrays
+  state = freshState(LEVELS.endless);   // idle state so render()/syncUI() are safe
+  buildMenu();
+  lastT = performance.now();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
