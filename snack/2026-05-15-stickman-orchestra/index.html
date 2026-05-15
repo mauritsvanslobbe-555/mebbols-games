@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Stickman Orchestra</title>
+<style>
+  html,body{margin:0;height:100%;background:#1a1430;overflow:hidden;
+    font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#fff;
+    -webkit-user-select:none;user-select:none;touch-action:none;}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;}
+  canvas{background:#211a3d;max-width:100%;max-height:100%;display:block;}
+  #ui{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+    pointer-events:none;}
+  .panel{pointer-events:auto;background:rgba(20,14,40,.92);border:2px solid #5b4b9a;
+    border-radius:14px;padding:22px 26px;text-align:center;max-width:80%;}
+  .panel h1{margin:.2em 0;font-size:1.5em;}
+  .panel p{margin:.4em 0;opacity:.85;font-size:.95em;}
+  button{pointer-events:auto;margin-top:12px;background:#7c5cff;color:#fff;border:0;
+    border-radius:10px;padding:12px 22px;font-size:1em;cursor:pointer;}
+  button:active{background:#634add;}
+  .hidden{display:none;}
+  #hint{position:fixed;bottom:10px;left:0;right:0;text-align:center;
+    font-size:.8em;opacity:.5;pointer-events:none;}
+  .stars{font-size:1.8em;letter-spacing:4px;}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<div id="ui">
+  <div id="menu" class="panel">
+    <h1>Stickman Orchestra</h1>
+    <p>Swing van punt naar punt. Elk punt speelt een noot.<br>
+    Tik / klik / spatie = vastgrijpen of loslaten.</p>
+    <p>Bereik de finishlijn zonder te vallen.</p>
+    <button id="startBtn">Speel Level 1</button>
+  </div>
+  <div id="result" class="panel hidden">
+    <h1 id="resTitle">Level voltooid</h1>
+    <div class="stars" id="resStars"></div>
+    <p id="resInfo"></p>
+    <button id="nextBtn">Volgende</button>
+  </div>
+</div>
+<div id="hint">Tik om te grijpen / los te laten</div>
+<script>
+"use strict";
+(function(){
+// ---- Canvas setup -----------------------------------------------------
+var canvas=document.getElementById("c"), ctx=canvas.getContext("2d");
+var VW=480, VH=800;            // virtuele wereldgrootte (logical pixels)
+function resize(){
+  // schaal canvas zodat het past, behoud aspect ratio
+  var scale=Math.min(window.innerWidth/VW, window.innerHeight/VH);
+  canvas.width=VW; canvas.height=VH;
+  canvas.style.width=(VW*scale)+"px";
+  canvas.style.height=(VH*scale)+"px";
+}
+window.addEventListener("resize",resize); resize();
+
+// ---- Audio (Web Audio API, OscillatorNode) ----------------------------
+var actx=null;
+// frequenties do..si (C major: C D E F G A B)
+var NOTE_FREQ=[261.63,293.66,329.63,349.23,392.00,440.00,493.88];
+var NOTE_COLOR=["#e23b3b","#e8842b","#e8d22b","#3bb24a","#3b6fe2","#5b3be2","#9b3be2"];
+function initAudio(){
+  if(actx) return;
+  try{
+    actx=new (window.AudioContext||window.webkitAudioContext)();
+  }catch(e){ actx=null; }
+}
+function playNote(idx){
+  if(!actx) return;
+  try{
+    if(actx.state==="suspended") actx.resume();
+    var t=actx.currentTime;
+    var osc=actx.createOscillator(), gain=actx.createGain();
+    osc.type="triangle";
+    osc.frequency.value=NOTE_FREQ[idx%NOTE_FREQ.length];
+    gain.gain.setValueAtTime(0.0001,t);
+    gain.gain.exponentialRampToValueAtTime(0.35,t+0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001,t+0.5);
+    osc.connect(gain); gain.connect(actx.destination);
+    osc.start(t); osc.stop(t+0.55);
+  }catch(e){}
+}
+
+// ---- Levels -----------------------------------------------------------
+// Elk punt: x,y in wereldcoords + note index. Melodie = noten op volgorde.
+// y kleiner = hoger op scherm. Wereld scrollt horizontaal mee met speler.
+var LEVELS=[
+  { // Level 1 - eenvoudige opgaande melodie
+    points:[{x:120,y:260,n:0},{x:300,y:230,n:2},{x:480,y:260,n:4},
+            {x:660,y:230,n:2},{x:840,y:260,n:0}],
+    finish:980, startX:120, startY:420
+  },
+  { // Level 2 - golvende lijn, 6 punten
+    points:[{x:120,y:240,n:0},{x:290,y:300,n:1},{x:460,y:220,n:3},
+            {x:630,y:300,n:5},{x:800,y:230,n:4},{x:970,y:280,n:2}],
+    finish:1110, startX:120, startY:430
+  },
+  { // Level 3 - langer, 8 punten, grotere sprongen
+    points:[{x:110,y:260,n:0},{x:280,y:200,n:2},{x:450,y:280,n:4},
+            {x:620,y:190,n:6},{x:790,y:270,n:5},{x:960,y:210,n:3},
+            {x:1130,y:280,n:1},{x:1300,y:240,n:0}],
+    finish:1440, startX:110, startY:440
+  }
+];
+
+// ---- Game state -------------------------------------------------------
+var GRAV=900;            // px/s^2
+var GRAB_RANGE=170;      // afstand waarbinnen je kunt grijpen
+var state="menu";        // menu | play | dead | won
+var levelIdx=0;
+var cam=0;               // camera x-offset
+var player, level, hitPoints, melodyIdx, hitCount, perfectCount, levelTime;
+var slowmo=0;            // resterende slow-mo tijd
+
+function startLevel(i){
+  levelIdx=i;
+  level=LEVELS[i];
+  player={
+    x:level.startX, y:level.startY,
+    vx:120, vy:0,                 // begint met lichte vaart naar rechts
+    grabbed:null,                 // het punt waaraan we hangen, of null
+    rope:0, angle:0, angVel:0     // slinger: lengte, hoek t.o.v. verticaal, hoeksnelheid
+  };
+  hitPoints={};                   // welke punten al geraakt zijn
+  melodyIdx=0; hitCount=0; perfectCount=0; levelTime=0; slowmo=0;
+  cam=0;
+  state="play";
+  hide("menu"); hide("result");
+}
+
+// ---- Input ------------------------------------------------------------
+function tryGrabOrRelease(){
+  initAudio();
+  if(state!=="play") return;
+  if(player.grabbed){
+    releaseSwing();
+  }else{
+    // grijp dichtstbijzijnde punt binnen bereik
+    var best=null, bestD=GRAB_RANGE;
+    for(var k=0;k<level.points.length;k++){
+      var p=level.points[k];
+      var dx=p.x-player.x, dy=p.y-player.y;
+      var d=Math.sqrt(dx*dx+dy*dy);
+      if(d<bestD){ bestD=d; best=p; best._i=k; }
+    }
+    if(best) grabPoint(best);
+  }
+}
+function grabPoint(p){
+  player.grabbed=p;
+  var dx=player.x-p.x, dy=player.y-p.y;
+  player.rope=Math.sqrt(dx*dx+dy*dy)||1;
+  // hoek gemeten vanaf neerwaartse verticaal (0 = recht onder punt)
+  player.angle=Math.atan2(dx,dy);
+  // zet huidige lineaire snelheid om naar hoeksnelheid (tangentiële component)
+  var tx=Math.cos(player.angle), ty=-Math.sin(player.angle); // tangent richting
+  var tang=player.vx*tx+player.vy*ty;
+  player.angVel=tang/player.rope;
+  // noot + score: perfect als swing-snelheid laag is (gecontroleerde grab)
+  if(!hitPoints[p._i]){
+    hitPoints[p._i]=true; hitCount++;
+    playNote(p.n);
+    var speed=Math.sqrt(player.vx*player.vx+player.vy*player.vy);
+    if(speed<340){ perfectCount++; slowmo=0.35; } // perfect timed = slow-mo reward
+    if(p.n===level.points[melodyIdx]?level.points[melodyIdx].n:-1){}
+    melodyIdx++;
+  }
+}
+function releaseSwing(){
+  var p=player.grabbed;
+  // tangentiële snelheid terug naar lineair op het moment van loslaten
+  var tx=Math.cos(player.angle), ty=-Math.sin(player.angle);
+  var tang=player.angVel*player.rope;
+  player.vx=tang*tx;
+  player.vy=tang*ty;
+  player.grabbed=null;
+}
+window.addEventListener("keydown",function(e){
+  if(e.code==="Space"){ e.preventDefault(); handleAction(); }
+});
+function handleAction(){
+  if(state==="menu"){ initAudio(); startLevel(0); return; }
+  if(state==="dead"){ initAudio(); startLevel(levelIdx); return; }
+  if(state==="won"){ return; } // knop handelt dit af
+  tryGrabOrRelease();
+}
+canvas.addEventListener("pointerdown",function(e){ e.preventDefault(); handleAction(); });
+
+// ---- UI helpers -------------------------------------------------------
+function show(id){ document.getElementById(id).classList.remove("hidden"); }
+function hide(id){ document.getElementById(id).classList.add("hidden"); }
+document.getElementById("startBtn").addEventListener("click",function(){
+  initAudio(); startLevel(0);
+});
+document.getElementById("nextBtn").addEventListener("click",function(){
+  initAudio();
+  if(state==="won"){
+    var next=(levelIdx+1)%LEVELS.length;
+    startLevel(next);
+  }else{
+    startLevel(levelIdx); // restart na game over
+  }
+});
+
+// ---- Save / load best stars (localStorage, try/catch) -----------------
+function saveStars(i,stars){
+  try{
+    var raw=localStorage.getItem("so_stars");
+    var arr=raw?JSON.parse(raw):[0,0,0];
+    if(stars>arr[i]) arr[i]=stars;
+    localStorage.setItem("so_stars",JSON.stringify(arr));
+  }catch(e){}
+}
+
+// ---- Game over / win --------------------------------------------------
+function die(){
+  state="dead";
+  document.getElementById("resTitle").textContent="Game over";
+  document.getElementById("resStars").textContent="";
+  document.getElementById("resInfo").textContent="Je viel. Probeer het opnieuw!";
+  document.getElementById("nextBtn").textContent="Opnieuw";
+  show("result");
+}
+function win(){
+  state="won";
+  var total=level.points.length;
+  // sterren: 1 = gehaald, +1 voor genoeg noten, +1 voor accuratesse + snelheid
+  var stars=1;
+  if(hitCount>=Math.ceil(total*0.6)) stars++;
+  if(perfectCount>=Math.ceil(total*0.5) && levelTime<22) stars++;
+  saveStars(levelIdx,stars);
+  document.getElementById("resTitle").textContent="Level "+(levelIdx+1)+" voltooid!";
+  document.getElementById("resStars").textContent=
+    "★".repeat(stars)+"☆".repeat(3-stars);
+  document.getElementById("resInfo").textContent=
+    "Noten: "+hitCount+"/"+total+"  ·  Perfect: "+perfectCount+
+    "  ·  Tijd: "+levelTime.toFixed(1)+"s";
+  document.getElementById("nextBtn").textContent=
+    (levelIdx+1<LEVELS.length)?"Volgend level":"Opnieuw vanaf 1";
+  show("result");
+}
+
+// ---- Update -----------------------------------------------------------
+function update(dt){
+  if(state!=="play") return;
+  levelTime+=dt;
+  if(slowmo>0){ slowmo-=dt; dt*=0.4; } // slow-mo vertraagt de simulatie
+
+  var p=player;
+  if(p.grabbed){
+    // pendulum: angulaire versnelling = -(g/L) * sin(angle)
+    var g=p.grabbed;
+    var angAcc=-(GRAV/p.rope)*Math.sin(p.angle);
+    p.angVel+=angAcc*dt;
+    p.angVel*=0.999;                // minieme demping
+    p.angle+=p.angVel*dt;
+    // positie afgeleid uit hoek t.o.v. ankerpunt
+    p.x=g.x+Math.sin(p.angle)*p.rope;
+    p.y=g.y+Math.cos(p.angle)*p.rope;
+  }else{
+    // vrije val / projectiel
+    p.vy+=GRAV*dt;
+    p.x+=p.vx*dt;
+    p.y+=p.vy*dt;
+  }
+
+  // camera volgt speler horizontaal
+  cam=p.x-VW*0.35;
+  if(cam<0) cam=0;
+
+  // finish?
+  if(p.x>=level.finish){ win(); return; }
+
+  // dood: in het water (onderaan) of te ver buiten beeld
+  if(p.y>VH-40) die();
+  if(p.x<cam-120) die();          // achter de camera gevallen
+}
+
+// ---- Render -----------------------------------------------------------
+function drawStickman(sx,sy){
+  ctx.strokeStyle="#fff"; ctx.lineWidth=4; ctx.lineCap="round";
+  // hoofd
+  ctx.beginPath(); ctx.arc(sx,sy-26,9,0,Math.PI*2); ctx.stroke();
+  // lichaam
+  ctx.beginPath(); ctx.moveTo(sx,sy-17); ctx.lineTo(sx,sy+6); ctx.stroke();
+  // armen (omhoog als we hangen)
+  ctx.beginPath();
+  if(player.grabbed){
+    ctx.moveTo(sx-9,sy-22); ctx.lineTo(sx,sy-10); ctx.lineTo(sx+9,sy-22);
+  }else{
+    ctx.moveTo(sx-11,sy+2); ctx.lineTo(sx,sy-8); ctx.lineTo(sx+11,sy+2);
+  }
+  ctx.stroke();
+  // benen
+  ctx.beginPath();
+  ctx.moveTo(sx-9,sy+22); ctx.lineTo(sx,sy+6); ctx.lineTo(sx+9,sy+22);
+  ctx.stroke();
+}
+function render(){
+  ctx.clearRect(0,0,VW,VH);
+  // achtergrond gradient
+  var grd=ctx.createLinearGradient(0,0,0,VH);
+  grd.addColorStop(0,"#2b2152"); grd.addColorStop(1,"#171130");
+  ctx.fillStyle=grd; ctx.fillRect(0,0,VW,VH);
+
+  if(state==="menu"){ return; } // panel-overlay toont menu
+
+  ctx.save();
+  ctx.translate(-cam,0);
+
+  // water onderaan
+  ctx.fillStyle="rgba(60,120,200,.45)";
+  ctx.fillRect(cam,VH-40,VW,40);
+
+  // finishlijn
+  ctx.strokeStyle="#fff"; ctx.lineWidth=3; ctx.setLineDash([10,8]);
+  ctx.beginPath(); ctx.moveTo(level.finish,40); ctx.lineTo(level.finish,VH-40);
+  ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle="#fff"; ctx.font="14px sans-serif";
+  ctx.fillText("FINISH",level.finish+6,60);
+
+  // touw naar het gegrepen punt
+  if(player.grabbed){
+    ctx.strokeStyle="#cfc6ff"; ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.moveTo(player.grabbed.x,player.grabbed.y);
+    ctx.lineTo(player.x,player.y-10);
+    ctx.stroke();
+  }
+
+  // aanhechtingspunten
+  for(var k=0;k<level.points.length;k++){
+    var pt=level.points[k];
+    var col=NOTE_COLOR[pt.n];
+    var grabbed=(player.grabbed===pt);
+    var used=hitPoints[k];
+    // bereik-ring rond het dichtstbijzijnde grijpbare punt
+    ctx.beginPath();
+    ctx.arc(pt.x,pt.y,grabbed?15:11,0,Math.PI*2);
+    ctx.fillStyle=col; ctx.fill();
+    ctx.lineWidth=3;
+    ctx.strokeStyle=used?"#fff":"rgba(255,255,255,.35)";
+    ctx.stroke();
+  }
+
+  // stickman
+  drawStickman(player.x,player.y);
+
+  ctx.restore();
+
+  // HUD
+  ctx.fillStyle="#fff"; ctx.font="bold 16px sans-serif";
+  ctx.fillText("Level "+(levelIdx+1),14,28);
+  ctx.font="13px sans-serif";
+  ctx.fillText("Noten "+hitCount+"/"+level.points.length+
+               "   Perfect "+perfectCount,14,48);
+  if(slowmo>0){
+    ctx.fillStyle="rgba(255,255,160,.9)";
+    ctx.fillText("PERFECT!",VW/2-30,40);
+  }
+}
+
+// ---- Loop (requestAnimationFrame + delta-time) ------------------------
+var last=0;
+function frame(ts){
+  if(!last) last=ts;
+  var dt=(ts-last)/1000;
+  last=ts;
+  if(dt>0.05) dt=0.05;            // clamp na tab-switch / lag spike
+  update(dt);
+  render();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
