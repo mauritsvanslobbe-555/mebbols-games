@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Co-Devil - Mebbols Snack</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;user-select:none;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;background:#0f0d18;color:#f3e9ff;font-family:system-ui,-apple-system,sans-serif;overflow:hidden}
+  #wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:8px;gap:8px}
+  #hud{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;font-size:13px;font-weight:600}
+  .stat{background:#241c33;padding:6px 10px;border-radius:8px;border:1px solid #3a2d52}
+  .stat span{color:#ff5577}
+  #stage{position:relative;background:linear-gradient(180deg,#1a1428 0%,#0f0a1c 100%);border:2px solid #3a2d52;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,0.5);overflow:hidden;touch-action:none}
+  canvas{display:block;cursor:crosshair}
+  #tools{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+  .tool{background:#241c33;color:#f3e9ff;border:2px solid #3a2d52;border-radius:8px;padding:8px 10px;font-size:12px;font-weight:700;cursor:pointer;min-width:84px;text-align:center;transition:all 0.15s}
+  .tool:hover{background:#322648}
+  .tool.active{border-color:#ff5577;background:#3a1d2d;box-shadow:0 0 12px rgba(255,85,119,0.5)}
+  .tool.cooling{opacity:0.45;cursor:not-allowed}
+  .tool .label{display:block;font-size:11px}
+  .tool .cost{display:block;font-size:10px;color:#ffb84d;margin-top:2px}
+  .tool .cd{display:block;font-size:10px;color:#7aa6ff;margin-top:1px}
+  #overlay{position:absolute;inset:0;background:rgba(15,13,24,0.92);display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px;text-align:center;padding:20px;z-index:10}
+  #overlay.show{display:flex}
+  #overlay h1{font-size:28px;color:#ff5577;text-shadow:0 0 18px rgba(255,85,119,0.6)}
+  #overlay p{font-size:14px;line-height:1.5;max-width:380px}
+  #overlay button{background:#ff5577;color:#fff;border:0;padding:12px 24px;font-size:15px;font-weight:700;border-radius:8px;cursor:pointer;box-shadow:0 4px 14px rgba(255,85,119,0.4)}
+  #overlay button:hover{background:#ff7799}
+  #flash{position:absolute;inset:0;pointer-events:none;background:#ff5577;opacity:0;transition:opacity 0.3s}
+  #flash.on{opacity:0.35}
+  .hint{font-size:11px;color:#9b8db8;text-align:center;max-width:480px}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="hud">
+    <div class="stat">LEVEL <span id="lvl">1</span></div>
+    <div class="stat">BUDGET <span id="bud">100</span></div>
+    <div class="stat">KILLS <span id="kil">0</span></div>
+    <div class="stat">RUNNERS LEFT <span id="rlf">5</span></div>
+    <div class="stat">ELEGANCE <span id="ele">0</span></div>
+    <div class="stat">BEST <span id="bst">0</span></div>
+  </div>
+  <div id="stage">
+    <canvas id="c" width="720" height="420"></canvas>
+    <div id="flash"></div>
+    <div id="overlay">
+      <h1 id="ovT">GAME OVER</h1>
+      <p id="ovM"></p>
+      <button id="btn">PLAY AGAIN</button>
+    </div>
+  </div>
+  <div id="tools">
+    <div class="tool" data-i="0"><span class="label">SPIKE [1]</span><span class="cost">cost 15</span><span class="cd" id="cd0">ready</span></div>
+    <div class="tool" data-i="1"><span class="label">FALL BLOCK [2]</span><span class="cost">cost 25</span><span class="cd" id="cd1">ready</span></div>
+    <div class="tool" data-i="2"><span class="label">VANISH FLOOR [3]</span><span class="cost">cost 20</span><span class="cd" id="cd2">ready</span></div>
+    <div class="tool" data-i="3"><span class="label">FAN [4]</span><span class="cost">cost 30</span><span class="cd" id="cd3">ready</span></div>
+  </div>
+  <div class="hint">Click/tap the level to place traps. Keys 1-4 select trap. Stop runners before they reach the green flag!</div>
+</div>
+<script>
+(function(){
+'use strict';
+// ============ CONFIG ============
+const W=720,H=420,G=0.55,TILE=30;
+const TRAPS=[
+  {n:'spike',cost:15,cd:600,col:'#ff3355'},
+  {n:'fall', cost:25,cd:1400,col:'#888'},
+  {n:'vanish',cost:20,cd:900,col:'#ffaa33'},
+  {n:'fan',  cost:30,cd:1800,col:'#55ddff'}
+];
+const SAVE_KEY='codevil_best_v1';
+// ============ STATE ============
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+let state=null;
+let best={kills:0,elegance:0};
+// ============ STORAGE ============
+function loadBest(){
+  try{
+    const raw=localStorage.getItem(SAVE_KEY);if(!raw)return;
+    const d=JSON.parse(raw);
+    if(d&&Number.isFinite(d.kills)&&Number.isFinite(d.elegance)){
+      best.kills=Math.max(0,Math.floor(d.kills));
+      best.elegance=Math.max(0,Math.floor(d.elegance));
+    }
+  }catch(e){console.warn('save load fail',e)}
+}
+function saveBest(){
+  try{localStorage.setItem(SAVE_KEY,JSON.stringify(best));}catch(e){console.warn('save fail',e)}
+}
+// ============ LEVELS ============
+// Each level: array of solid rects {x,y,w,h}, plus start+goal
+function buildLevel(n){
+  const platforms=[];
+  // floor
+  platforms.push({x:0,y:H-30,w:W,h:30,base:true});
+  if(n===1){
+    platforms.push({x:200,y:H-110,w:120,h:14,base:true});
+    platforms.push({x:380,y:H-160,w:120,h:14,base:true});
+    platforms.push({x:540,y:H-110,w:120,h:14,base:true});
+    // small gap in floor
+    platforms.push({gap:true,x:320,y:H-30,w:60,h:30});
+  }else if(n===2){
+    platforms.push({x:150,y:H-100,w:90,h:14,base:true});
+    platforms.push({x:290,y:H-150,w:90,h:14,base:true});
+    platforms.push({x:430,y:H-100,w:90,h:14,base:true});
+    platforms.push({x:570,y:H-170,w:90,h:14,base:true});
+    platforms.push({gap:true,x:240,y:H-30,w:50,h:30});
+    platforms.push({gap:true,x:520,y:H-30,w:50,h:30});
+  }else{
+    platforms.push({x:120,y:H-90,w:70,h:14,base:true});
+    platforms.push({x:230,y:H-150,w:70,h:14,base:true});
+    platforms.push({x:340,y:H-90,w:70,h:14,base:true});
+    platforms.push({x:450,y:H-170,w:70,h:14,base:true});
+    platforms.push({x:560,y:H-110,w:70,h:14,base:true});
+    platforms.push({gap:true,x:190,y:H-30,w:40,h:30});
+    platforms.push({gap:true,x:410,y:H-30,w:40,h:30});
+  }
+  return {
+    platforms,
+    start:{x:30,y:H-60},
+    goal:{x:W-50,y:H-60}
+  };
+}
+// ============ GAME ============
+function newGame(){
+  state={
+    level:1,maxLevel:3,
+    kills:0,runnersLeft:5,trapsUsed:0,
+    budget:100,maxBudget:120,budgetRegen:8,
+    selected:0,cooldowns:[0,0,0,0],
+    traps:[],runner:null,particles:[],
+    map:null,levelStart:performance.now(),
+    over:false,won:false,prepTime:1500,gameStart:performance.now()
+  };
+  state.map=buildLevel(1);
+  spawnRunner();
+}
+function spawnRunner(){
+  state.runner={
+    x:state.map.start.x,y:state.map.start.y-20,
+    w:18,h:22,vx:1.6,vy:0,
+    grounded:false,alive:true,
+    dodgeCool:0,jumpCool:0,
+    facing:1
+  };
+}
+function nextLevel(){
+  if(state.level>=state.maxLevel){
+    // Loop with harder modifier? endless wave style
+    state.level++;
+    state.maxLevel++;
+    state.map=buildLevel(((state.level-1)%3)+1);
+    // make runners faster
+    state.runnersLeft+=2;
+  }else{
+    state.level++;
+    state.map=buildLevel(state.level);
+  }
+  state.budget=Math.min(state.maxBudget,state.budget+40);
+  state.traps=[];
+  state.particles=[];
+  state.levelStart=performance.now();
+  spawnRunner();
+}
+// ============ INPUT ============
+let pendingPlace=null;
+function setSelected(i){
+  if(i<0||i>=TRAPS.length)return;
+  state.selected=i;
+  updateToolUI();
+}
+function tryPlaceTrap(px,py){
+  if(state.over)return;
+  const t=TRAPS[state.selected];
+  if(state.cooldowns[state.selected]>0)return;
+  if(state.budget<t.cost)return;
+  // snap to a sensible position - on top of nearest platform if close, else freestanding spike
+  // Find platform under or near cursor
+  let snapY=py,snapX=px;
+  const sz=trapSize(state.selected);
+  // try to find platform top within 40px below cursor
+  let best=null,bd=1e9;
+  for(const p of state.map.platforms){
+    if(p.gap)continue;
+    if(px>=p.x-10&&px<=p.x+p.w+10){
+      const d=Math.abs(py-p.y);
+      if(d<bd&&d<60){bd=d;best=p}
+    }
+  }
+  if(state.selected===0||state.selected===2){ // spike or vanish need platform
+    if(!best)return;
+    snapY=best.y-(state.selected===0?sz.h:0);
+    snapX=Math.max(best.x,Math.min(best.x+best.w-sz.w,px-sz.w/2));
+    if(state.selected===2){snapY=best.y} // vanish overlaps platform top
+  }else if(state.selected===1){ // falling block - hovers above
+    snapY=Math.max(20,py-sz.h);
+    snapX=px-sz.w/2;
+  }else if(state.selected===3){ // fan - on a platform, blows up
+    if(!best)return;
+    snapY=best.y-sz.h;
+    snapX=Math.max(best.x,Math.min(best.x+best.w-sz.w,px-sz.w/2));
+  }
+  // Don't overlap existing trap
+  for(const tr of state.traps){
+    if(snapX<tr.x+tr.w&&snapX+sz.w>tr.x&&snapY<tr.y+tr.h&&snapY+sz.h>tr.y)return;
+  }
+  state.traps.push({type:state.selected,x:snapX,y:snapY,w:sz.w,h:sz.h,life:0,state:'idle',vx:0,vy:0});
+  state.budget-=t.cost;
+  state.cooldowns[state.selected]=t.cd;
+  state.trapsUsed++;
+  flash();
+}
+function trapSize(i){
+  if(i===0)return{w:24,h:14}; // spike
+  if(i===1)return{w:34,h:20}; // fall block
+  if(i===2)return{w:60,h:8};  // vanish floor patch
+  if(i===3)return{w:30,h:18}; // fan
+  return{w:20,h:20};
+}
+// Pointer events
+cv.addEventListener('pointerdown',e=>{
+  e.preventDefault();
+  const r=cv.getBoundingClientRect();
+  const sx=cv.width/r.width,sy=cv.height/r.height;
+  const x=(e.clientX-r.left)*sx,y=(e.clientY-r.top)*sy;
+  tryPlaceTrap(x,y);
+});
+window.addEventListener('keydown',e=>{
+  if(e.key>='1'&&e.key<='4'){setSelected(parseInt(e.key)-1);e.preventDefault()}
+  if(e.key==='r'||e.key==='R'){if(state.over)restart()}
+});
+document.querySelectorAll('.tool').forEach(el=>{
+  el.addEventListener('click',()=>setSelected(parseInt(el.dataset.i)));
+});
+document.getElementById('btn').addEventListener('click',restart);
+function restart(){newGame();document.getElementById('overlay').classList.remove('show')}
+function flash(){const f=document.getElementById('flash');f.classList.add('on');setTimeout(()=>f.classList.remove('on'),120)}
+// ============ AI RUNNER ============
+function updateRunner(dt){
+  const r=state.runner;if(!r||!r.alive)return;
+  // Sense gaps & traps ahead
+  const ahead=r.facing*40;
+  const probeX=r.x+r.w/2+ahead;
+  const probeY=r.y+r.h;
+  let groundAhead=false;
+  for(const p of state.map.platforms){
+    if(p.gap)continue;
+    if(probeX>=p.x&&probeX<=p.x+p.w&&Math.abs(probeY-p.y)<14)groundAhead=true;
+  }
+  // Detect dangerous trap in jump zone
+  let danger=null;
+  for(const t of state.traps){
+    if(t.state==='dead')continue;
+    const tcx=t.x+t.w/2;
+    if(Math.abs(tcx-(r.x+r.w/2))<70&&t.y>r.y-20&&t.y<r.y+r.h+40){
+      if(t.type===0||t.type===2||t.type===1)danger=t;
+    }
+  }
+  // Jump logic
+  r.jumpCool-=dt;
+  if(r.grounded&&r.jumpCool<=0){
+    if(!groundAhead&&r.facing>0){r.vy=-9;r.jumpCool=300}
+    else if(danger&&r.facing>0&&danger.x>r.x){
+      // jump over if close enough
+      const dx=danger.x-r.x;
+      if(dx<55&&dx>5){r.vy=-9.5;r.jumpCool=350}
+    }
+  }
+  // Hit wall? turn around (only useful at far edges)
+  if(r.x<0){r.x=0;r.vx=Math.abs(r.vx)}
+  if(r.x+r.w>W){r.x=W-r.w;r.vx=-Math.abs(r.vx)}
+  // Always run right
+  r.vx=1.6*r.facing;
+  // Apply fan force
+  for(const t of state.traps){
+    if(t.type===3&&t.state==='active'){
+      const tcx=t.x+t.w/2;
+      if(Math.abs(tcx-(r.x+r.w/2))<40&&r.y>t.y-90&&r.y<t.y+10){
+        r.vy-=0.9; // strong upward push
+      }
+    }
+  }
+  // physics
+  r.vy+=G;
+  if(r.vy>12)r.vy=12;
+  r.x+=r.vx;
+  // horizontal collisions
+  for(const p of state.map.platforms){
+    if(p.gap)continue;
+    if(rectOverlap(r,p)){
+      if(r.vx>0)r.x=p.x-r.w;else r.x=p.x+p.w;
+      r.vx*=-1;r.facing*=-1;
+    }
+  }
+  r.y+=r.vy;
+  r.grounded=false;
+  for(const p of state.map.platforms){
+    if(p.gap)continue;
+    if(rectOverlap(r,p)){
+      if(r.vy>0){r.y=p.y-r.h;r.vy=0;r.grounded=true}
+      else if(r.vy<0){r.y=p.y+p.h;r.vy=0}
+    }
+  }
+  // fall off bottom = death
+  if(r.y>H+40){killRunner('void')}
+  // reached goal?
+  const gx=state.map.goal.x,gy=state.map.goal.y;
+  if(r.x+r.w>gx-10&&r.y+r.h>gy-20){
+    runnerEscaped();
+  }
+}
+function rectOverlap(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y}
+function killRunner(reason){
+  const r=state.runner;if(!r||!r.alive)return;
+  r.alive=false;
+  state.kills++;
+  // particles
+  for(let i=0;i<14;i++)state.particles.push({x:r.x+r.w/2,y:r.y+r.h/2,vx:(Math.random()-0.5)*6,vy:(Math.random()-1)*5,life:40,col:'#ff5577'});
+  flash();
+  state.runnersLeft--;
+  if(state.runnersLeft<=0){
+    setTimeout(()=>endGame(true),700);
+  }else{
+    setTimeout(()=>{if(!state.over){spawnRunner()}},700);
+  }
+}
+function runnerEscaped(){
+  const r=state.runner;if(!r||!r.alive)return;
+  r.alive=false;
+  // celebrate particles
+  for(let i=0;i<10;i++)state.particles.push({x:r.x,y:r.y,vx:(Math.random()-0.5)*4,vy:-Math.random()*4,life:30,col:'#33ff77'});
+  setTimeout(()=>{
+    if(state.level>=state.maxLevel&&state.kills<3){
+      // runner won; still continue but penalize
+    }
+    if(state.runnersLeft<=0){endGame(true);return}
+    // Next level if enough kills, else keep trying
+    if(state.kills>=state.level){nextLevel()}else{spawnRunner()}
+  },500);
+}
+function endGame(win){
+  state.over=true;
+  const elegance=state.trapsUsed>0?Math.floor((state.kills*100)/state.trapsUsed):0;
+  state.elegance=elegance;
+  let isBest=false;
+  if(state.kills>best.kills||(state.kills===best.kills&&elegance>best.elegance)){
+    best.kills=state.kills;best.elegance=elegance;saveBest();isBest=true;
+  }
+  document.getElementById('ovT').textContent=isBest?'NEW BEST!':'ROUND OVER';
+  document.getElementById('ovM').innerHTML=
+    'Kills: <b>'+state.kills+'</b><br>Traps used: <b>'+state.trapsUsed+'</b><br>Elegance: <b>'+elegance+'</b> (kills per trap x100)<br>Level reached: <b>'+state.level+'</b>';
+  document.getElementById('overlay').classList.add('show');
+}
+// ============ TRAP LOGIC ============
+function updateTraps(dt){
+  for(const t of state.traps){
+    t.life+=dt;
+    if(t.type===0){ // spike - permanent
+      if(state.runner&&state.runner.alive&&rectOverlap(state.runner,{x:t.x,y:t.y,w:t.w,h:t.h})){
+        killRunner('spike');
+      }
+    }else if(t.type===1){ // falling block
+      if(t.state==='idle'){
+        // trigger when runner is below
+        if(state.runner&&state.runner.alive){
+          const rcx=state.runner.x+state.runner.w/2;
+          if(rcx>t.x-5&&rcx<t.x+t.w+5&&state.runner.y>t.y+10){
+            t.state='falling';
+          }
+        }
+      }else if(t.state==='falling'){
+        t.vy+=G*1.2;
+        t.y+=t.vy;
+        // hit floor?
+        for(const p of state.map.platforms){
+          if(p.gap)continue;
+          if(rectOverlap({x:t.x,y:t.y,w:t.w,h:t.h},p)&&t.vy>0){
+            t.y=p.y-t.h;t.state='landed';t.vy=0;break;
+          }
+        }
+        if(state.runner&&state.runner.alive&&rectOverlap(state.runner,{x:t.x,y:t.y,w:t.w,h:t.h})){
+          killRunner('block');t.state='landed';
+        }
+        if(t.y>H){t.state='dead'}
+      }
+    }else if(t.type===2){ // vanish floor - disappears when stepped on
+      // act as solid temporarily, then crumble
+      if(t.state==='idle'){
+        // Treat as no-op since real platform is underneath; trigger when runner overlaps top
+        if(state.runner&&state.runner.alive){
+          if(rectOverlap(state.runner,{x:t.x,y:t.y-4,w:t.w,h:6})){
+            t.state='warn';t.life=0;
+          }
+        }
+      }else if(t.state==='warn'){
+        if(t.life>400){
+          // remove the underlying platform segment by marking trap as 'pit' and converting underlying platform to gap-aware
+          t.state='open';
+          carveHole(t.x,t.y,t.w);
+        }
+      }
+    }else if(t.type===3){ // fan
+      if(t.state==='idle'){
+        if(t.life>200)t.state='active'; // small windup
+      }
+    }
+  }
+  state.traps=state.traps.filter(t=>t.state!=='dead'&&t.life<60000);
+}
+function carveHole(x,y,w){
+  const out=[];
+  for(const p of state.map.platforms){
+    if(p.gap||p.y!==y||!(p.x<x+w&&p.x+p.w>x)){out.push(p);continue}
+    // split
+    const left={x:p.x,y:p.y,w:Math.max(0,x-p.x),h:p.h,base:true};
+    const right={x:x+w,y:p.y,w:Math.max(0,p.x+p.w-(x+w)),h:p.h,base:true};
+    if(left.w>2)out.push(left);
+    if(right.w>2)out.push(right);
+    out.push({gap:true,x:x,y:p.y,w:w,h:p.h});
+  }
+  state.map.platforms=out;
+}
+// ============ RENDER ============
+function render(){
+  ctx.clearRect(0,0,W,H);
+  // bg parallax
+  ctx.fillStyle='#1a1428';ctx.fillRect(0,0,W,H);
+  // stars
+  ctx.fillStyle='rgba(255,255,255,0.15)';
+  for(let i=0;i<30;i++){
+    const sx=(i*53)%W,sy=(i*31)%(H-80);
+    ctx.fillRect(sx,sy,2,2);
+  }
+  // platforms
+  for(const p of state.map.platforms){
+    if(p.gap)continue;
+    ctx.fillStyle=p.base?'#4a3b6e':'#5a4b80';
+    ctx.fillRect(p.x,p.y,p.w,p.h);
+    ctx.fillStyle='#6a5a92';
+    ctx.fillRect(p.x,p.y,p.w,3);
+  }
+  // goal
+  const g=state.map.goal;
+  ctx.fillStyle='#33ff77';
+  ctx.fillRect(g.x,g.y-30,4,30);
+  ctx.beginPath();ctx.moveTo(g.x+4,g.y-30);ctx.lineTo(g.x+24,g.y-22);ctx.lineTo(g.x+4,g.y-14);ctx.closePath();ctx.fill();
+  // traps
+  for(const t of state.traps)drawTrap(t);
+  // runner
+  if(state.runner&&state.runner.alive)drawRunner(state.runner);
+  // particles
+  for(const p of state.particles){
+    ctx.fillStyle=p.col;
+    ctx.globalAlpha=Math.max(0,p.life/40);
+    ctx.fillRect(p.x,p.y,3,3);
+  }
+  ctx.globalAlpha=1;
+  // ghost preview at mouse
+  // (skipped to save LOC)
+}
+function drawRunner(r){
+  ctx.fillStyle='#ffe9b3';
+  ctx.fillRect(r.x,r.y,r.w,r.h);
+  ctx.fillStyle='#000';
+  const eyeX=r.facing>0?r.x+r.w-6:r.x+3;
+  ctx.fillRect(eyeX,r.y+5,3,3);
+  ctx.fillStyle='#7a5a3a';
+  ctx.fillRect(r.x,r.y+r.h-4,r.w,4);
+}
+function drawTrap(t){
+  const c=TRAPS[t.type].col;
+  if(t.type===0){ // spike
+    ctx.fillStyle=c;
+    const n=Math.floor(t.w/6);
+    for(let i=0;i<n;i++){
+      ctx.beginPath();
+      ctx.moveTo(t.x+i*6,t.y+t.h);
+      ctx.lineTo(t.x+i*6+3,t.y);
+      ctx.lineTo(t.x+i*6+6,t.y+t.h);
+      ctx.closePath();ctx.fill();
+    }
+  }else if(t.type===1){ // fall block
+    ctx.fillStyle=t.state==='falling'?'#bbb':'#666';
+    ctx.fillRect(t.x,t.y,t.w,t.h);
+    ctx.strokeStyle='#222';ctx.lineWidth=2;ctx.strokeRect(t.x,t.y,t.w,t.h);
+    if(t.state==='idle'){
+      ctx.fillStyle='rgba(255,255,255,0.4)';
+      ctx.fillRect(t.x+4,t.y+4,t.w-8,2);
+    }
+  }else if(t.type===2){ // vanish floor
+    if(t.state==='open')return;
+    ctx.fillStyle=t.state==='warn'?(Math.floor(t.life/80)%2?'#ff8833':'#aa3300'):c;
+    ctx.fillRect(t.x,t.y-2,t.w,4);
+    ctx.fillStyle='rgba(0,0,0,0.3)';
+    for(let i=0;i<t.w;i+=8)ctx.fillRect(t.x+i,t.y-2,4,4);
+  }else if(t.type===3){ // fan
+    ctx.fillStyle=c;
+    ctx.fillRect(t.x,t.y+t.h-6,t.w,6);
+    if(t.state==='active'){
+      const blade=(t.life/30)%6;
+      ctx.fillStyle='#aaeeff';
+      ctx.fillRect(t.x+4+blade,t.y,t.w-8,3);
+      // wind lines upward
+      ctx.strokeStyle='rgba(85,221,255,0.4)';
+      ctx.lineWidth=2;
+      for(let i=0;i<3;i++){
+        const off=(t.life/8+i*15)%45;
+        ctx.beginPath();
+        ctx.moveTo(t.x+t.w/2-8,t.y-off);
+        ctx.lineTo(t.x+t.w/2+8,t.y-off-6);
+        ctx.stroke();
+      }
+    }
+  }
+}
+// ============ UI ============
+function updateToolUI(){
+  document.querySelectorAll('.tool').forEach(el=>{
+    const i=parseInt(el.dataset.i);
+    el.classList.toggle('active',i===state.selected);
+    el.classList.toggle('cooling',state.cooldowns[i]>0||state.budget<TRAPS[i].cost);
+    const cd=document.getElementById('cd'+i);
+    if(state.cooldowns[i]>0)cd.textContent=(state.cooldowns[i]/1000).toFixed(1)+'s';
+    else cd.textContent='ready';
+  });
+  document.getElementById('lvl').textContent=state.level;
+  document.getElementById('bud').textContent=Math.floor(state.budget);
+  document.getElementById('kil').textContent=state.kills;
+  document.getElementById('rlf').textContent=state.runnersLeft;
+  const elegance=state.trapsUsed>0?Math.floor((state.kills*100)/state.trapsUsed):0;
+  document.getElementById('ele').textContent=elegance;
+  document.getElementById('bst').textContent=best.kills+' ('+best.elegance+')';
+}
+// ============ LOOP ============
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(50,now-last);last=now;
+  if(!state.over){
+    // regen budget
+    state.budget=Math.min(state.maxBudget,state.budget+state.budgetRegen*dt/1000);
+    // cooldowns
+    for(let i=0;i<state.cooldowns.length;i++)state.cooldowns[i]=Math.max(0,state.cooldowns[i]-dt);
+    // particles
+    for(const p of state.particles){p.x+=p.vx;p.y+=p.vy;p.vy+=0.3;p.life--}
+    state.particles=state.particles.filter(p=>p.life>0);
+    // runner
+    updateRunner(dt);
+    updateTraps(dt);
+  }
+  render();
+  updateToolUI();
+  requestAnimationFrame(loop);
+}
+// ============ INIT ============
+function resize(){
+  const wrap=document.getElementById('stage');
+  const maxW=Math.min(window.innerWidth-16,860);
+  const maxH=window.innerHeight-180;
+  let w=maxW,h=w*(H/W);
+  if(h>maxH){h=maxH;w=h*(W/H)}
+  cv.style.width=w+'px';cv.style.height=h+'px';
+}
+window.addEventListener('resize',resize);
+loadBest();
+newGame();
+resize();
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
