@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Fear Diary</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: #07070a; color: #c8c6bd; font-family: Georgia, 'Times New Roman', serif; overflow: hidden; }
+  #wrap { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  canvas { display: block; background: #0a0a0d; box-shadow: 0 0 60px rgba(0,0,0,0.9) inset; max-width: 100vw; max-height: 100vh; touch-action: none; }
+  #hud { position: fixed; top: 8px; left: 8px; right: 8px; display: flex; justify-content: space-between; pointer-events: none; font-size: 14px; letter-spacing: 1px; text-shadow: 0 0 4px #000; }
+  #hud span { background: rgba(0,0,0,0.5); padding: 4px 8px; border-radius: 2px; }
+  #overlay { position: fixed; inset: 0; background: rgba(5,5,8,0.92); display: none; align-items: center; justify-content: center; padding: 20px; z-index: 10; }
+  #overlay .box { max-width: 420px; width: 100%; text-align: center; }
+  #overlay h1 { font-size: 28px; margin-bottom: 12px; color: #b8b4a3; letter-spacing: 3px; }
+  #overlay p { margin: 10px 0; line-height: 1.5; color: #8a8676; font-style: italic; }
+  #overlay input { width: 100%; background: #15151a; color: #c8c6bd; border: 1px solid #2a2a32; padding: 10px; font-family: inherit; font-size: 14px; margin: 12px 0; }
+  #overlay button { background: #1a1a22; color: #c8c6bd; border: 1px solid #3a3a44; padding: 10px 24px; font-family: inherit; font-size: 14px; cursor: pointer; letter-spacing: 2px; }
+  #overlay button:hover { background: #2a2a32; }
+  #dpad { position: fixed; bottom: 16px; left: 16px; width: 140px; height: 140px; display: none; touch-action: none; user-select: none; z-index: 5; }
+  #dpad div { position: absolute; background: rgba(40,40,50,0.5); border: 1px solid rgba(120,120,140,0.3); width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 20px; border-radius: 4px; }
+  #dpad .u { top: 0; left: 48px; } #dpad .d { bottom: 0; left: 48px; }
+  #dpad .l { top: 48px; left: 0; } #dpad .r { top: 48px; right: 0; }
+  #sprint { position: fixed; bottom: 30px; right: 30px; width: 70px; height: 70px; border-radius: 50%; background: rgba(60,30,30,0.5); border: 1px solid rgba(180,60,60,0.4); color: #c88; display: none; align-items: center; justify-content: center; font-size: 11px; letter-spacing: 1px; z-index: 5; touch-action: none; user-select: none; }
+  @media (pointer: coarse) { #dpad, #sprint { display: block; } #dpad div { display: flex; } #sprint { display: flex; } }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<div id="hud"><span id="keys">Keys: 0/5</span><span id="status">listening...</span></div>
+<div id="dpad"><div class="u">▲</div><div class="d">▼</div><div class="l">◀</div><div class="r">▶</div></div>
+<div id="sprint">RUN</div>
+<div id="overlay"><div class="box" id="obox"></div></div>
+<script>
+"use strict";
+// === Fear Diary — 2D top-down snack adaptation ===
+const C = document.getElementById('c'), X = C.getContext('2d');
+const HUDK = document.getElementById('keys'), HUDS = document.getElementById('status');
+const OV = document.getElementById('overlay'), OB = document.getElementById('obox');
+const GRID = 4, ROOM_W = 200, ROOM_H = 160, WALL = 20;
+const W = GRID * ROOM_W, H = GRID * ROOM_H;
+const STORAGE_KEY = 'feardiary_notes_v1';
+const BAD = ['fuck','shit','bitch','cunt','dick','asshole','bastard','kut','tering','kanker','hoer','klootzak'];
+let canvasW = 800, canvasH = 640, scale = 1;
+
+function fit() {
+  const vw = Math.min(window.innerWidth, 1200), vh = window.innerHeight;
+  const r = Math.min(vw / W, vh / H, 1);
+  scale = r;
+  C.width = W; C.height = H;
+  C.style.width = (W * r) + 'px'; C.style.height = (H * r) + 'px';
+}
+window.addEventListener('resize', fit); fit();
+
+// --- Save / load notes ---
+function loadNotes() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr.filter(n => n && typeof n.t === 'string' && Number.isFinite(n.r)).slice(-50);
+  } catch (e) { return []; }
+}
+function saveNotes(arr) {
+  try {
+    const trimmed = arr.slice(-50);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
+  } catch (e) {}
+}
+function filterText(s) {
+  let t = String(s).slice(0, 80);
+  for (const b of BAD) {
+    const re = new RegExp(b, 'gi');
+    t = t.replace(re, '*'.repeat(Math.min(b.length, 3)));
+  }
+  return t.replace(/[<>]/g, '');
+}
+
+// --- Procedural house ---
+function genHouse() {
+  const rooms = [];
+  for (let y = 0; y < GRID; y++) for (let x = 0; x < GRID; x++) {
+    rooms.push({ x, y, doors: { n: false, s: false, e: false, w: false } });
+  }
+  const at = (x, y) => rooms[y * GRID + x];
+  // spanning tree-ish: ensure connectivity
+  const visited = new Set(); const stack = [at(0,0)]; visited.add('0,0');
+  while (stack.length) {
+    const cur = stack[stack.length - 1];
+    const neigh = [];
+    if (cur.y > 0 && !visited.has(cur.x+','+(cur.y-1))) neigh.push(['n', at(cur.x, cur.y-1), 's']);
+    if (cur.y < GRID-1 && !visited.has(cur.x+','+(cur.y+1))) neigh.push(['s', at(cur.x, cur.y+1), 'n']);
+    if (cur.x > 0 && !visited.has((cur.x-1)+','+cur.y)) neigh.push(['w', at(cur.x-1, cur.y), 'e']);
+    if (cur.x < GRID-1 && !visited.has((cur.x+1)+','+cur.y)) neigh.push(['e', at(cur.x+1, cur.y), 'w']);
+    if (!neigh.length) { stack.pop(); continue; }
+    const pick = neigh[Math.floor(Math.random() * neigh.length)];
+    cur.doors[pick[0]] = true; pick[1].doors[pick[2]] = true;
+    visited.add(pick[1].x+','+pick[1].y); stack.push(pick[1]);
+  }
+  // extra random doors for loops
+  for (let i = 0; i < 4; i++) {
+    const r = rooms[Math.floor(Math.random() * rooms.length)];
+    const dirs = ['n','s','e','w'];
+    const d = dirs[Math.floor(Math.random() * 4)];
+    const dx = d==='e'?1:d==='w'?-1:0, dy = d==='s'?1:d==='n'?-1:0;
+    if (r.x+dx>=0 && r.x+dx<GRID && r.y+dy>=0 && r.y+dy<GRID) {
+      r.doors[d] = true; at(r.x+dx, r.y+dy).doors[{n:'s',s:'n',e:'w',w:'e'}[d]] = true;
+    }
+  }
+  // place 5 keys (not in start 0,0)
+  const candidates = rooms.filter(r => !(r.x===0 && r.y===0));
+  for (let i = candidates.length - 1; i > 0; i--) { const j = Math.floor(Math.random()*(i+1)); [candidates[i],candidates[j]] = [candidates[j],candidates[i]]; }
+  const keyIcons = ['🔑','📕','🕯️','🪞','⚙'];
+  const keys = candidates.slice(0, 5).map((r, i) => ({
+    rx: r.x, ry: r.y, icon: keyIcons[i],
+    px: r.x*ROOM_W + WALL + 20 + Math.random()*(ROOM_W-WALL*2-40),
+    py: r.y*ROOM_H + WALL + 20 + Math.random()*(ROOM_H-WALL*2-40),
+    taken: false
+  }));
+  // ghost notes from prior runs
+  const stored = loadNotes();
+  const ghostCount = Math.min(stored.length, 3 + Math.floor(Math.random()*3));
+  const ghosts = [];
+  for (let i = 0; i < ghostCount; i++) {
+    const note = stored[Math.floor(Math.random() * stored.length)];
+    const rr = rooms[Math.floor(Math.random() * rooms.length)];
+    ghosts.push({ text: note.t, px: rr.x*ROOM_W + ROOM_W/2, py: rr.y*ROOM_H + ROOM_H/2, alpha: 0 });
+  }
+  return { rooms, keys, ghosts };
+}
+
+// --- Game state ---
+let house, player, presence, keysHeld, timeStill, dimTimer, runState, dt;
+function newRun() {
+  house = genHouse();
+  player = { x: ROOM_W/2, y: ROOM_H/2, vx:0, vy:0, sprint:false };
+  presence = { x: W - ROOM_W/2, y: H - ROOM_H/2, vx: 0, vy: 0, target: null, dimmed: 0 };
+  keysHeld = 0; timeStill = 0; dimTimer = 0; runState = 'play';
+  OV.style.display = 'none';
+  updateHUD();
+}
+function updateHUD() {
+  HUDK.textContent = 'Keys: ' + keysHeld + '/5';
+  if (runState === 'play') HUDS.textContent = presence.dimmed > 0 ? 'silence...' : (player.sprint ? 'running!' : 'listening...');
+}
+
+// --- Input ---
+const inp = { u:0, d:0, l:0, r:0, sprint:0 };
+addEventListener('keydown', e => {
+  if (e.key==='ArrowUp'||e.key==='w'||e.key==='W') inp.u=1;
+  if (e.key==='ArrowDown'||e.key==='s'||e.key==='S') inp.d=1;
+  if (e.key==='ArrowLeft'||e.key==='a'||e.key==='A') inp.l=1;
+  if (e.key==='ArrowRight'||e.key==='d'||e.key==='D') inp.r=1;
+  if (e.key==='Shift') inp.sprint=1;
+});
+addEventListener('keyup', e => {
+  if (e.key==='ArrowUp'||e.key==='w'||e.key==='W') inp.u=0;
+  if (e.key==='ArrowDown'||e.key==='s'||e.key==='S') inp.d=0;
+  if (e.key==='ArrowLeft'||e.key==='a'||e.key==='A') inp.l=0;
+  if (e.key==='ArrowRight'||e.key==='d'||e.key==='D') inp.r=0;
+  if (e.key==='Shift') inp.sprint=0;
+});
+// dpad
+function bindBtn(sel, prop) {
+  const el = document.querySelector(sel); if (!el) return;
+  const on = e => { e.preventDefault(); inp[prop] = 1; };
+  const off = e => { e.preventDefault(); inp[prop] = 0; };
+  el.addEventListener('touchstart', on, {passive:false}); el.addEventListener('touchend', off);
+  el.addEventListener('mousedown', on); el.addEventListener('mouseup', off); el.addEventListener('mouseleave', off);
+}
+bindBtn('#dpad .u', 'u'); bindBtn('#dpad .d', 'd'); bindBtn('#dpad .l', 'l'); bindBtn('#dpad .r', 'r');
+bindBtn('#sprint', 'sprint');
+
+// tap to move (simple seek toward tap point on canvas)
+let tapTarget = null;
+C.addEventListener('pointerdown', e => {
+  if (runState !== 'play') return;
+  const rect = C.getBoundingClientRect();
+  tapTarget = { x: (e.clientX - rect.left) / scale, y: (e.clientY - rect.top) / scale };
+});
+C.addEventListener('pointerup', () => { tapTarget = null; });
+
+// --- Game logic ---
+function roomOf(px, py) { return { rx: Math.floor(px / ROOM_W), ry: Math.floor(py / ROOM_H) }; }
+function canPass(fromR, toDir) {
+  const r = house.rooms[fromR.ry * GRID + fromR.rx];
+  return r && r.doors[toDir];
+}
+function update(d) {
+  if (runState !== 'play') return;
+  // movement
+  let mx = (inp.r - inp.l), my = (inp.d - inp.u);
+  if (tapTarget) {
+    const dx = tapTarget.x - player.x, dy = tapTarget.y - player.y;
+    const m = Math.hypot(dx, dy);
+    if (m > 6) { mx = dx/m; my = dy/m; }
+  }
+  const ml = Math.hypot(mx, my); if (ml > 1) { mx /= ml; my /= ml; }
+  const speed = inp.sprint ? 180 : 95;
+  player.sprint = inp.sprint > 0 && (mx||my) !== 0;
+  const nx = player.x + mx * speed * d;
+  const ny = player.y + my * speed * d;
+  // wall + door collision: only allow passing through wall if door exists
+  const cur = roomOf(player.x, player.y);
+  const roomL = cur.rx * ROOM_W, roomR = roomL + ROOM_W;
+  const roomT = cur.ry * ROOM_H, roomB = roomT + ROOM_H;
+  const doors = house.rooms[cur.ry*GRID+cur.rx].doors;
+  // X
+  let fx = nx;
+  if (fx < roomL + WALL/2) {
+    if (doors.w && ny > roomT + ROOM_H*0.35 && ny < roomT + ROOM_H*0.65) {} else fx = roomL + WALL/2;
+  } else if (fx > roomR - WALL/2) {
+    if (doors.e && ny > roomT + ROOM_H*0.35 && ny < roomT + ROOM_H*0.65) {} else fx = roomR - WALL/2;
+  }
+  // Y
+  let fy = ny;
+  if (fy < roomT + WALL/2) {
+    if (doors.n && nx > roomL + ROOM_W*0.35 && nx < roomL + ROOM_W*0.65) {} else fy = roomT + WALL/2;
+  } else if (fy > roomB - WALL/2) {
+    if (doors.s && nx > roomL + ROOM_W*0.35 && nx < roomL + ROOM_W*0.65) {} else fy = roomB - WALL/2;
+  }
+  fx = Math.max(2, Math.min(W-2, fx));
+  fy = Math.max(2, Math.min(H-2, fy));
+  const moved = Math.hypot(fx - player.x, fy - player.y) > 0.2;
+  player.x = fx; player.y = fy;
+
+  // stillness
+  if (!moved) timeStill += d; else timeStill = 0;
+  if (timeStill > 30 && presence.dimmed <= 0) { presence.dimmed = 8; }
+  if (presence.dimmed > 0) presence.dimmed -= d;
+
+  // pick keys
+  for (const k of house.keys) {
+    if (!k.taken && Math.hypot(k.px - player.x, k.py - player.y) < 18) {
+      k.taken = true; keysHeld++;
+      updateHUD();
+    }
+  }
+
+  // presence AI: lazy patrol, accelerates if player sprints
+  const detectR = (player.sprint ? 260 : 130);
+  const distToP = Math.hypot(presence.x - player.x, presence.y - player.y);
+  const sees = distToP < detectR && presence.dimmed <= 0;
+  if (sees) {
+    const dx = player.x - presence.x, dy = player.y - presence.y;
+    const m = Math.hypot(dx, dy) || 1;
+    const pspeed = player.sprint ? 110 : 55;
+    presence.x += (dx/m) * pspeed * d;
+    presence.y += (dy/m) * pspeed * d;
+  } else {
+    // wander
+    if (!presence.target || Math.hypot(presence.target.x-presence.x, presence.target.y-presence.y) < 20) {
+      presence.target = { x: WALL + Math.random()*(W-WALL*2), y: WALL + Math.random()*(H-WALL*2) };
+    }
+    const dx = presence.target.x - presence.x, dy = presence.target.y - presence.y;
+    const m = Math.hypot(dx, dy) || 1;
+    presence.x += (dx/m) * 30 * d;
+    presence.y += (dy/m) * 30 * d;
+  }
+  // collide with player
+  if (distToP < 16 && presence.dimmed <= 0) { die(); return; }
+
+  // ghost notes fade in proximity
+  for (const g of house.ghosts) {
+    const dd = Math.hypot(g.px - player.x, g.py - player.y);
+    const target = dd < 120 ? 1 : 0.3;
+    g.alpha += (target - g.alpha) * 0.05;
+  }
+
+  // win check
+  if (keysHeld >= 5 && roomOf(player.x, player.y).rx === 0 && roomOf(player.x, player.y).ry === 0) {
+    win();
+  }
+  updateHUD();
+}
+
+function die() {
+  runState = 'dead';
+  HUDS.textContent = 'you are gone.';
+  OB.innerHTML = '';
+  const h = document.createElement('h1'); h.textContent = 'YOU DIED'; OB.appendChild(h);
+  const p = document.createElement('p'); p.textContent = 'leave a note for the next visitor:'; OB.appendChild(p);
+  const inE = document.createElement('input'); inE.maxLength = 80; inE.placeholder = 'something behind the third door...'; OB.appendChild(inE);
+  const btn = document.createElement('button'); btn.textContent = 'SAVE & RESTART';
+  btn.onclick = () => {
+    const txt = filterText(inE.value.trim() || 'silence.');
+    const arr = loadNotes(); arr.push({ t: txt, r: Date.now() }); saveNotes(arr);
+    newRun();
+  };
+  OB.appendChild(btn); OV.style.display = 'flex'; setTimeout(()=>inE.focus(), 50);
+}
+function win() {
+  runState = 'won'; HUDS.textContent = 'you survived.';
+  OB.innerHTML = '';
+  const h = document.createElement('h1'); h.textContent = 'YOU ESCAPED'; OB.appendChild(h);
+  const p = document.createElement('p'); p.textContent = 'the diary remembers you. play again?'; OB.appendChild(p);
+  const btn = document.createElement('button'); btn.textContent = 'NEW RUN';
+  btn.onclick = () => newRun(); OB.appendChild(btn); OV.style.display = 'flex';
+}
+
+// --- Render ---
+function render() {
+  X.fillStyle = '#06060a'; X.fillRect(0, 0, W, H);
+  // rooms
+  for (const r of house.rooms) {
+    const rx = r.x*ROOM_W, ry = r.y*ROOM_H;
+    X.fillStyle = '#0f0e14'; X.fillRect(rx+WALL/2, ry+WALL/2, ROOM_W-WALL, ROOM_H-WALL);
+    // walls
+    X.fillStyle = '#1a1922';
+    if (!r.doors.n) X.fillRect(rx, ry, ROOM_W, WALL/2);
+    else { X.fillRect(rx, ry, ROOM_W*0.35, WALL/2); X.fillRect(rx+ROOM_W*0.65, ry, ROOM_W*0.35, WALL/2); }
+    if (!r.doors.s) X.fillRect(rx, ry+ROOM_H-WALL/2, ROOM_W, WALL/2);
+    else { X.fillRect(rx, ry+ROOM_H-WALL/2, ROOM_W*0.35, WALL/2); X.fillRect(rx+ROOM_W*0.65, ry+ROOM_H-WALL/2, ROOM_W*0.35, WALL/2); }
+    if (!r.doors.w) X.fillRect(rx, ry, WALL/2, ROOM_H);
+    else { X.fillRect(rx, ry, WALL/2, ROOM_H*0.35); X.fillRect(rx, ry+ROOM_H*0.65, WALL/2, ROOM_H*0.35); }
+    if (!r.doors.e) X.fillRect(rx+ROOM_W-WALL/2, ry, WALL/2, ROOM_H);
+    else { X.fillRect(rx+ROOM_W-WALL/2, ry, WALL/2, ROOM_H*0.35); X.fillRect(rx+ROOM_W-WALL/2, ry+ROOM_H*0.65, WALL/2, ROOM_H*0.35); }
+  }
+  // start room glow
+  X.fillStyle = 'rgba(80,70,40,0.08)'; X.fillRect(WALL/2, WALL/2, ROOM_W-WALL, ROOM_H-WALL);
+  X.fillStyle = '#5a5238'; X.font = '11px Georgia'; X.fillText('START', 12, 22);
+
+  // ghost notes
+  for (const g of house.ghosts) {
+    X.save(); X.globalAlpha = g.alpha * 0.7;
+    X.fillStyle = '#7a8a9a'; X.font = 'italic 11px Georgia'; X.textAlign = 'center';
+    const lines = wrap(g.text, 22);
+    for (let i = 0; i < lines.length; i++) X.fillText(lines[i], g.px, g.py + i*14);
+    X.restore();
+  }
+  // keys
+  for (const k of house.keys) {
+    if (k.taken) continue;
+    X.save(); X.font = '18px serif'; X.textAlign = 'center'; X.textBaseline = 'middle';
+    X.shadowColor = '#aa8'; X.shadowBlur = 8; X.fillText(k.icon, k.px, k.py); X.restore();
+  }
+  // presence
+  const pulse = 0.5 + 0.3 * Math.sin(performance.now()/300);
+  X.save();
+  const g = X.createRadialGradient(presence.x, presence.y, 2, presence.x, presence.y, 40);
+  g.addColorStop(0, 'rgba(220,220,230,'+(0.7*pulse)+')');
+  g.addColorStop(0.5, 'rgba(150,140,160,0.3)');
+  g.addColorStop(1, 'rgba(20,20,30,0)');
+  X.fillStyle = g; X.beginPath(); X.arc(presence.x, presence.y, 40, 0, Math.PI*2); X.fill();
+  X.restore();
+
+  // player
+  X.fillStyle = player.sprint ? '#d4a070' : '#b8a888';
+  X.beginPath(); X.arc(player.x, player.y, 6, 0, Math.PI*2); X.fill();
+  X.strokeStyle = 'rgba(0,0,0,0.6)'; X.lineWidth = 1; X.stroke();
+
+  // darken non-player room slightly (vignette per current room)
+  const cur = roomOf(player.x, player.y);
+  X.save();
+  X.fillStyle = 'rgba(0,0,0,0.55)';
+  for (const r of house.rooms) {
+    if (r.x === cur.rx && r.y === cur.ry) continue;
+    X.fillRect(r.x*ROOM_W, r.y*ROOM_H, ROOM_W, ROOM_H);
+  }
+  X.restore();
+  // silence dim overlay
+  if (presence.dimmed > 0) { X.fillStyle = 'rgba(20,30,40,0.25)'; X.fillRect(0,0,W,H); }
+}
+function wrap(s, n) { const out = []; for (let i = 0; i < s.length; i += n) out.push(s.slice(i, i+n)); return out; }
+
+// --- Loop ---
+let last = performance.now();
+function loop(t) {
+  let d = (t - last) / 1000; last = t;
+  if (d > 0.05) d = 0.05; // tab-switch safe
+  update(d); render();
+  requestAnimationFrame(loop);
+}
+newRun();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
