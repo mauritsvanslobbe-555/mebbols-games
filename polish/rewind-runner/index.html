@@ -2,8 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-<title>Rewind Runner — Phase 2 — Levels &amp; Content</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+<!-- Fase 6 — theme-color matches the rewind-orange accent (art-bible §2.1). Lighthouse PWA-hint friendly. -->
+<meta name="theme-color" content="#ff9e2c" />
+<meta name="description" content="Rewind Runner — endless lane-runner with a 3-second rewind. Pick your moment to undo." />
+<title>Rewind Runner</title>
 <style>
   :root { --bg-a:#0a0e27; --bg-b:#1a1f3a; --lane:rgba(255,255,255,0.06);
           --player:#ffd35c; --obst:#ff5e3a; --coin:#ffd35c; --rewind:#ff9e2c; }
@@ -33,7 +36,7 @@
   #meterFill.full { background: #ffd35c; box-shadow: 0 0 12px #ffd35c;
                     animation: meterPulse 1s ease-in-out infinite; }
   @keyframes meterPulse { 0%,100% { filter: brightness(1); } 50% { filter: brightness(1.35); } }
-  #rewindBtn { position: absolute; right: 16px; bottom: 32px; width: 86px; height: 86px;
+  #rewindBtn { position: absolute; right: max(16px, env(safe-area-inset-right)); bottom: max(32px, calc(32px + env(safe-area-inset-bottom))); width: 86px; height: 86px;
                border-radius: 50%; background: rgba(255,158,44,0.18); color: #fff;
                border: 2px solid var(--rewind); font-weight: 700; font-size: 12px;
                letter-spacing: 1.5px; pointer-events: auto; touch-action: none;
@@ -82,6 +85,103 @@
                    mix-blend-mode: overlay; opacity: 0; pointer-events: none;
                    transition: opacity 0.15s; }
   #rewindOverlay.on { opacity: 0.45; }
+  /* Fase 4 §1.3 — mute button. 44px min hit-area for thumbs. */
+  #muteBtn { position: absolute; left: max(16px, env(safe-area-inset-left)); bottom: max(32px, calc(32px + env(safe-area-inset-bottom))); width: 48px; height: 48px;
+             border-radius: 50%; background: rgba(255,255,255,0.08); color: #eaeaff;
+             border: 1px solid rgba(255,255,255,0.18); font-size: 20px;
+             pointer-events: auto; touch-action: manipulation; cursor: pointer;
+             display: flex; align-items: center; justify-content: center;
+             padding: 0; line-height: 1; }
+  #muteBtn.muted { color: #888; }
+  /* Fase 5 §P1 — Rewind Tutorial hint nudge. Fades in if the player passes
+     30s in a surviveAndRewind level without ever pressing rewind. */
+  #nudge { position: absolute; left: 50%; top: 64px; transform: translateX(-50%);
+           padding: 8px 14px; border-radius: 999px; background: rgba(255,158,44,0.18);
+           border: 1px solid var(--rewind); color: #fff; font-size: 12px;
+           letter-spacing: 1px; text-transform: uppercase; opacity: 0; pointer-events: none;
+           transition: opacity 0.4s ease; text-shadow: 0 2px 6px #000a;
+           box-shadow: 0 2px 12px #0006; white-space: nowrap; max-width: 92vw; }
+  #nudge.on { opacity: 0.95; animation: nudgePulse 1.6s ease-in-out infinite; }
+  @keyframes nudgePulse { 0%,100% { filter: brightness(1); }
+                          50%     { filter: brightness(1.25); } }
+  /* ---------- Fase 6 — title screen / branding ---------- */
+  /* Big neon-noir logo on the landing overlay. Uses the rewind→obstacle gradient
+     so the title carries the same warm-orange identity as the rewind button. */
+  .titleLogo { font-size: 56px; font-weight: 800; letter-spacing: 4px;
+               background: linear-gradient(135deg,#ffd35c 0%, #ff9e2c 55%, #ff5e3a 100%);
+               -webkit-background-clip: text; background-clip: text; color: transparent;
+               text-shadow: 0 0 32px rgba(255,158,44,0.35); text-align: center;
+               line-height: 1.05; margin: 4px 0 0; }
+  .titleSub  { font-size: 12px; letter-spacing: 4px; text-transform: uppercase;
+               opacity: 0.72; text-align: center; margin-top: 2px; }
+  .titleBtns { display: flex; flex-direction: column; gap: 10px; width: 100%;
+               max-width: 280px; margin-top: 8px; }
+  .titleBtns .btn { width: 100%; }
+  #titleVersion { position: absolute; right: 12px; bottom: 12px; font-size: 10px;
+                  opacity: 0.45; letter-spacing: 1px; text-transform: uppercase;
+                  pointer-events: none; }
+  #titleBest { font-size: 11px; opacity: 0.65; letter-spacing: 1px;
+               text-transform: uppercase; text-align: center; margin-top: -2px; }
+  /* Title-screen overlay needs a faint background-pulse to mimic the in-game
+     parallax glow without spinning the actual canvas loop. Pure CSS. */
+  #title.show { animation: titleGlow 6s ease-in-out infinite; }
+  @keyframes titleGlow { 0%,100% { background: rgba(10,14,39,0.86); }
+                         50%     { background: rgba(20,20,55,0.86); } }
+  /* ---------- Fase 6 — How To Play modal ---------- */
+  #howto { z-index: 5; }
+  .howtoBox { max-width: 360px; }
+  .howtoRow { display: flex; align-items: flex-start; gap: 10px; text-align: left;
+              font-size: 13px; line-height: 1.5; opacity: 0.92; }
+  .howtoRow b { display: inline-block; min-width: 70px; color: var(--rewind); font-weight: 700; }
+  /* ---------- Fase 6 — Achievements panel ---------- */
+  #achList { display: flex; flex-direction: column; gap: 8px; width: 100%;
+             max-width: 400px; max-height: 60vh; overflow-y: auto; padding: 4px; }
+  .achRow { display: flex; align-items: center; gap: 12px; text-align: left;
+            background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px; padding: 10px 12px; }
+  .achRow.unlocked { background: linear-gradient(135deg, rgba(255,158,44,0.12), rgba(255,94,58,0.06));
+                     border-color: rgba(255,158,44,0.45); }
+  .achRow .achIcon { width: 32px; height: 32px; flex: 0 0 32px; border-radius: 50%;
+                     background: rgba(255,255,255,0.08); display: flex; align-items: center;
+                     justify-content: center; font-size: 16px; }
+  .achRow.unlocked .achIcon { background: var(--rewind); color: #0a0e27; }
+  .achRow .achBody { flex: 1; min-width: 0; }
+  .achRow .achName { font-size: 14px; font-weight: 700; }
+  .achRow .achDesc { font-size: 11px; opacity: 0.7; line-height: 1.4; margin-top: 2px; }
+  .achRow.locked .achName { opacity: 0.7; }
+  #achCount { font-size: 11px; opacity: 0.65; letter-spacing: 1px;
+              text-transform: uppercase; margin: -4px 0 4px; }
+  /* ---------- Fase 6 — Achievement unlock popup (top-right slide-in) ---------- */
+  /* DOM element, absolutely positioned. Not on canvas — no render cost, plays
+     cleanly during slow-mo / rewind because it lives on wall-clock CSS time. */
+  #achPopup { position: absolute; top: max(12px, env(safe-area-inset-top)); right: 12px;
+              display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+              background: linear-gradient(135deg, rgba(255,158,44,0.95), rgba(255,94,58,0.95));
+              color: #0a0e27; border-radius: 12px; font-weight: 700;
+              transform: translateX(120%); opacity: 0; pointer-events: none;
+              box-shadow: 0 6px 24px #0009; max-width: 80vw; z-index: 10;
+              transition: transform 0.35s cubic-bezier(.2,.8,.2,1), opacity 0.35s; }
+  #achPopup.show { transform: translateX(0); opacity: 1; }
+  #achPopup .achPopupIcon { width: 30px; height: 30px; flex: 0 0 30px;
+                            border-radius: 50%; background: #0a0e27; color: #ffd35c;
+                            display: flex; align-items: center; justify-content: center;
+                            font-size: 16px; }
+  #achPopup .achPopupKicker { font-size: 9px; letter-spacing: 1.5px;
+                              text-transform: uppercase; opacity: 0.75; font-weight: 600; }
+  #achPopup .achPopupName { font-size: 13px; font-weight: 800; line-height: 1.2; }
+  /* ---------- Fase 6 — Share toast ---------- */
+  #toast { position: absolute; left: 50%; bottom: 24%; transform: translate(-50%, 8px);
+           padding: 10px 16px; background: rgba(10,14,39,0.95); color: #eaeaff;
+           border: 1px solid var(--rewind); border-radius: 999px; font-size: 12px;
+           letter-spacing: 1px; text-transform: uppercase; opacity: 0;
+           pointer-events: none; transition: opacity 0.25s, transform 0.25s;
+           box-shadow: 0 4px 16px #0008; z-index: 11; white-space: nowrap; }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  /* ---------- Fase 6 — Result-screen share button ---------- */
+  /* Share is just .btn.ghost with a small lift; web-share-only on supported browsers,
+     clipboard fallback elsewhere. */
+  #shareBtn { display: inline-flex; align-items: center; justify-content: center;
+              gap: 8px; }
 </style>
 </head>
 <body>
@@ -97,13 +197,53 @@
     </div>
   </div>
   <button id="rewindBtn" disabled>REWIND</button>
-  <div id="hint">A/D or arrows = lane &middot; W/Space/Up = jump &middot; S/Down = slide &middot; Hold R = rewind</div>
+  <div id="nudge">Tip: Hold R to rewind</div>
+  <button id="muteBtn" aria-label="Mute" title="Toggle sound (M)">&#x1F509;</button>
+  <div id="hint">A/D or arrows = lane &middot; W/Space/Up = jump &middot; S/Down = slide &middot; Hold R = rewind &middot; M = mute</div>
 
-  <!-- Level selector -->
-  <div id="menu" class="overlay show">
+  <!-- Title screen — Fase 6 landing. Shows logo, best, and primary buttons. -->
+  <div id="title" class="overlay show">
+    <div class="titleSub">PICK YOUR MOMENT TO UNDO</div>
+    <h1 class="titleLogo">REWIND<br>RUNNER</h1>
+    <div id="titleBest">BEST SCORE: 0</div>
+    <div class="titleBtns">
+      <button id="playBtn" class="btn">PLAY</button>
+      <button id="levelSelectBtn" class="btn ghost">LEVEL SELECT</button>
+      <button id="howtoBtn" class="btn ghost">HOW TO PLAY</button>
+      <button id="achBtn" class="btn ghost">ACHIEVEMENTS</button>
+    </div>
+    <div id="titleVersion">v1.0</div>
+  </div>
+
+  <!-- How To Play modal — 4 lines, dismissable. -->
+  <div id="howto" class="overlay">
+    <div class="howtoBox">
+      <h2>HOW TO PLAY</h2>
+      <h1>REWIND RUNNER</h1>
+      <div class="howtoRow"><b>MOVE</b><span>A / D or &larr;/&rarr; (or swipe) — change lane</span></div>
+      <div class="howtoRow"><b>JUMP</b><span>W / Space / &uarr; (or tap / swipe up) — over low blocks</span></div>
+      <div class="howtoRow"><b>SLIDE</b><span>S / &darr; (or swipe down) — under high bars</span></div>
+      <div class="howtoRow"><b>REWIND</b><span>Hold R / Shift (or the round button) — 3 seconds back when the meter is full</span></div>
+    </div>
+    <button id="howtoCloseBtn" class="btn">GOT IT</button>
+  </div>
+
+  <!-- Level selector — reachable from the title screen "Level Select" button. -->
+  <div id="menu" class="overlay">
+    <h2>CHOOSE A RUN</h2>
     <h1>REWIND RUNNER</h1>
-    <p>Pick your moment to undo. Choose Endless mode or take on a challenge level.</p>
+    <p>Endless mode or one of eight challenge levels.</p>
     <div id="levelList"></div>
+    <button id="menuBackBtn" class="btn ghost">BACK</button>
+  </div>
+
+  <!-- Achievements panel — reachable from the title screen. -->
+  <div id="achievements" class="overlay">
+    <h2>ACHIEVEMENTS</h2>
+    <h1>UNLOCKS</h1>
+    <div id="achCount">0 / 8 UNLOCKED</div>
+    <div id="achList"></div>
+    <button id="achBackBtn" class="btn ghost">BACK</button>
   </div>
 
   <!-- Result / game over / level complete -->
@@ -112,8 +252,22 @@
     <h1 id="resultTitle">REWIND RUNNER</h1>
     <p id="resultText"></p>
     <button id="retryBtn" class="btn">RETRY</button>
+    <button id="shareBtn" class="btn ghost">SHARE SCORE</button>
     <button id="menuBtn" class="btn ghost">LEVEL SELECT</button>
+    <button id="resultTitleBtn" class="btn ghost">MAIN MENU</button>
   </div>
+
+  <!-- Achievement unlock popup — slides in top-right for ~2s -->
+  <div id="achPopup" aria-live="polite">
+    <div class="achPopupIcon">&#x2605;</div>
+    <div>
+      <div class="achPopupKicker">ACHIEVEMENT</div>
+      <div class="achPopupName" id="achPopupName">First Rewind</div>
+    </div>
+  </div>
+
+  <!-- Generic toast (used by share-fallback) -->
+  <div id="toast">Link copied</div>
 </div>
 <script>
 "use strict";
@@ -149,6 +303,27 @@
   // obstacle type name <-> index map (index used by render/collision code)
   const OBST_INDEX = { block: 0, low: 1, high: 2 };
   const OBST_NAME = ["block", "low", "high"];
+
+  // ---------- Fase 4 — game juice constants ----------
+  // Lane-change duration. Tuned at 150ms: long enough to feel intentional, short
+  // enough to chain dodges. easeOutCubic for snappy attack + soft settle.
+  const LANE_TRANSITION_S = 0.15;
+  // Slow-mo dip on rewind entry/exit (Fase 4 §5). Entry ramps dtMul down before
+  // rewind takes over; exit ramps back up. Rewind itself runs at full sim-rate.
+  const SLOWMO_ENTRY_S = 0.15;      // 1.0 -> 0.3 over 150ms
+  const SLOWMO_ENTRY_TARGET = 0.3;
+  const SLOWMO_EXIT_S = 0.18;       // 0.4 -> 1.0
+  const SLOWMO_EXIT_START = 0.4;
+  // Screen-shake cap so insane combos can't go off the rails.
+  const SHAKE_MAX_INTENSITY = 16;
+  // Music BPM bounds (Fase 4 §2). Mapped onto speed range 6..14.
+  const BPM_MIN = 110;
+  const BPM_MAX = 130;
+
+  // ---------- Fase 6 — branding / share constants ----------
+  const GAME_VERSION = "1.0";
+  const SHARE_URL = "https://mebbols.com/games/rewind-runner-volledige-versie/";
+  const SHARE_TITLE = "Rewind Runner";
 
   // ---------- level data (embedded — identical structure to levels.json) ----------
   // Endless tuning + 8 challenge levels per GDD §5.1 and §11. Tweak here to rebalance.
@@ -190,8 +365,10 @@
       { id: "the-gauntlet", name: "The Gauntlet",
         desc: "Combo walls. Only one lane is ever safe. Stay sharp.",
         duration: 120, obstacleTypes: ["combo"],
-        spawnRateStart: 24, spawnRateEnd: 16,
-        speedStart: 8, speedEnd: 12, speedRampSec: 120,
+        // Fase 5 balance: speedStart 8->7, spawnRateStart 24->28 — adds ~0.15s decision
+        // window per combo and matches Limbo's intro feel.
+        spawnRateStart: 28, spawnRateEnd: 16,
+        speedStart: 7, speedEnd: 12, speedRampSec: 120,
         coinDensity: 0.3, win: { type: "survive", seconds: 120 } },
       { id: "coin-rush", name: "Coin Rush",
         desc: "No obstacles, just a flood of coins. Go for a huge score.",
@@ -202,8 +379,10 @@
       { id: "speed-demon", name: "Speed Demon",
         desc: "Starts at top speed. Survive 60 seconds without slowing.",
         duration: 60, obstacleTypes: ["block", "low", "high"],
+        // Fase 5 balance: speedStart 12->10, speedRampSec 60->45. Gives a 4-5s ramp
+        // from 10->14 instead of slamming into 12 from frame 1 (still spicy, no brick wall).
         spawnRateStart: 18, spawnRateEnd: 14,
-        speedStart: 12, speedEnd: 14, speedRampSec: 60,
+        speedStart: 10, speedEnd: 14, speedRampSec: 45,
         coinDensity: 0.4, win: { type: "survive", seconds: 60 } },
       { id: "marathon", name: "Marathon",
         desc: "No tricks. Just five full minutes of pure endurance.",
@@ -252,8 +431,13 @@
       speed: cfg.speedStart,
       distance: 0,          // world units traveled
       score: 0,             // coins * 5
-      lane: 1,              // 0..2
-      laneT: 1,             // smoothed (for animation)
+      lane: 1,              // 0..2 — target lane (input writes here)
+      laneT: 1,             // smoothed (for animation, follows the ease curve)
+      // Fase 4 §4 — eased lane-transition. fromLane/toLane bracket the move,
+      // tx is normalized progress 0..1. easeOutCubic in update().
+      laneFromLane: 1,
+      laneToLane: 1,
+      laneTx: 1,            // 1 = transition complete (idle)
       y: 0, vy: 0,          // jump height (world units)
       sliding: false, slideUntil: 0,
       jumping: false, jumpUntil: 0,
@@ -268,6 +452,23 @@
       bufferAcc: 0,
       buffer: [],           // ring of snapshots
       ghost: null,          // {pts:[{x,y}], life}
+      // Fase 4 §3 — screen shake. addShake() writes intensity/duration; render()
+      // applies a randomized translate before scene-draw, then restores.
+      shakeI: 0, shakeMax: 0, shakeDur: 0, shakeT: 0,
+      // Fase 4 §5 — slow-mo for rewind entry/exit. dtMul scales the SIM dt;
+      // does NOT scale render-frame dt (RAF stays smooth). Phase values:
+      //   "none" | "entry" | "exit"
+      slowmoPhase: "none",
+      slowmoT: 0,           // seconds into current phase
+      dtMul: 1,
+      // Fase 4 §5 — armed when player initiates rewind; gate that holds rewind
+      // off for the entry slow-mo duration before flipping state.rewinding=true.
+      rewindArmed: false,
+      // Fase 6 — achievement tracking, per-run. Lives ONLY on state (not in the
+      // ringbuffer) — these are aggregate counters, not simulation state.
+      unhit: true,               // toggled false on collision. "Perfect Run" needs true at level-complete.
+      ghostDrained: false,       // true if a rewind ever drained buffer fully (Ghost Runner)
+      bufferPeak: 0,             // largest buffer length seen this run (so we know "full" was reached)
     };
   }
 
@@ -418,6 +619,9 @@
   const input = { left:false, right:false, jump:false, slide:false, rewindHold:false };
   window.addEventListener("keydown", e => {
     if (e.repeat) return;
+    // Fase 4 §1 — lazy audio init on first keypress (user-gesture rule)
+    if (!Audio.ctx) audioInit();
+    audioResume();
     const k = e.key.toLowerCase();
     keys[k] = true;
     if (k === "arrowleft" || k === "a") tryLane(-1);
@@ -436,6 +640,9 @@
   // touch — swipes on canvas, hold for rewind button
   let touchStart = null;
   canvas.addEventListener("pointerdown", e => {
+    // Fase 4 §1 — lazy audio init on first canvas touch
+    if (!Audio.ctx) audioInit();
+    audioResume();
     touchStart = { x: e.clientX, y: e.clientY, t: performance.now() };
   });
   canvas.addEventListener("pointerup", e => {
@@ -466,7 +673,18 @@
 
   function tryLane(d) {
     if (!state || !state.running || state.rewinding) return;
-    state.lane = Math.max(0, Math.min(LANES - 1, state.lane + d));
+    const next = Math.max(0, Math.min(LANES - 1, state.lane + d));
+    if (next === state.lane) return;
+    // Fase 4 §4 — start an eased transition from CURRENT animated position
+    // (state.laneT) toward the new target lane. Starting from laneT (not from
+    // the previous integer lane) means chained inputs feel responsive: a quick
+    // L-then-R doesn't snap or stutter.
+    state.laneFromLane = state.laneT;
+    state.lane = next;
+    state.laneToLane = next;
+    state.laneTx = 0;
+    sfxLaneChange();
+    trackLaneChanged();   // Fase 6 — Lane Master cumulative counter
   }
   function tryJump() {
     if (!state || !state.running || state.rewinding) return;
@@ -474,12 +692,14 @@
     state.jumping = true;
     state.jumpUntil = state.t + JUMP_S;
     state.vy = 1; // marker; we compute y from sine of jump progress
+    sfxJump();
   }
   function trySlide() {
     if (!state || !state.running || state.rewinding) return;
     if (state.jumping || state.sliding) return;
     state.sliding = true;
     state.slideUntil = state.t + SLIDE_S;
+    sfxLand(0.5); // slide grounds player — soft thud
   }
 
   // ---------- spawning ----------
@@ -542,6 +762,11 @@
       elapsed: state.elapsed,
       lane: state.lane,
       laneT: state.laneT,
+      // Fase 4 §4 — store the eased transition so rewind replays the
+      // mid-transition camera position correctly. Cheap (3 numbers).
+      laneFromLane: state.laneFromLane,
+      laneToLane: state.laneToLane,
+      laneTx: state.laneTx,
       y: state.y,
       jumping: state.jumping, jumpUntil: state.jumpUntil - state.t,
       sliding: state.sliding, slideUntil: state.slideUntil - state.t,
@@ -556,6 +781,9 @@
     state.distance = s.distance;
     state.elapsed = s.elapsed;
     state.lane = s.lane; state.laneT = s.laneT;
+    state.laneFromLane = s.laneFromLane != null ? s.laneFromLane : s.lane;
+    state.laneToLane = s.laneToLane != null ? s.laneToLane : s.lane;
+    state.laneTx = s.laneTx != null ? s.laneTx : 1;
     state.y = s.y;
     state.jumping = s.jumping; state.jumpUntil = state.t + s.jumpUntil;
     state.sliding = s.sliding; state.slideUntil = state.t + s.slideUntil;
@@ -599,6 +827,8 @@
         // -22*s matches the y-offset drawCoin() uses for the coin disc.
         const cp = project(c.z, c.y, c.lane);
         spawnCoinBurst(cp.x, cp.y - 22 * cp.s);
+        sfxCoin();  // Fase 4 §1.3
+        trackCoinCollected();   // Fase 6 — Coin Collector cumulative counter
       }
     }
     return null;
@@ -637,11 +867,59 @@
 
   // ---------- update ----------
   function update(dt) {
+    // Fase 4 §5 — slow-mo entry/exit. dtMul scales SIM dt (not render dt) so
+    // the world visibly slows but the loop stays smooth. Music speed follows
+    // BPM-shift (which itself follows speedAt) — both decouple cleanly from
+    // dtMul. We DO advance state.t with the *real* dt so timers (jumpUntil
+    // etc.) keep matching the rewind buffer's wall-clock cadence.
+    if (state.slowmoPhase === "entry") {
+      // If the player let go of rewind mid-dip, abort cleanly: short exit
+      // ramp back to full speed, meter stays charged for re-use.
+      if (!input.rewindHold) {
+        state.slowmoPhase = "exit";
+        state.slowmoT = 0;
+        state.rewindArmed = false;
+      } else {
+        state.slowmoT += dt;
+        const k = Math.min(1, state.slowmoT / SLOWMO_ENTRY_S);
+        state.dtMul = 1 + (SLOWMO_ENTRY_TARGET - 1) * k;
+        if (k >= 1) {
+          // Entry complete — actually flip into rewind now.
+          state.slowmoPhase = "none";
+          state.dtMul = 1;
+          state.rewinding = true;
+          state.rewindUsed = true;
+          state.rewindArmed = false;
+          state.bufferAcc = 0;
+          document.getElementById("rewindOverlay").classList.add("on");
+          sfxRewindStart();
+          trackRewindUsed();           // Fase 6 — First Rewind / Time Traveler counters
+        }
+      }
+    } else if (state.slowmoPhase === "exit") {
+      state.slowmoT += dt;
+      const k = Math.min(1, state.slowmoT / SLOWMO_EXIT_S);
+      state.dtMul = SLOWMO_EXIT_START + (1 - SLOWMO_EXIT_START) * k;
+      if (k >= 1) {
+        state.slowmoPhase = "none";
+        state.dtMul = 1;
+      }
+    }
+    // dts: simulated dt (slow-mo aware) vs wall dt (timers + shake decay)
+    const sdt = dt * state.dtMul;
     state.t += dt;
-    state.dt = dt;
+    state.dt = sdt;
+
+    // Fase 4 §3 — shake decay runs on wall-clock dt regardless of slow-mo,
+    // so the impact still feels punchy when the world slows after a hit.
+    if (state.shakeT > 0) {
+      state.shakeT -= dt;
+      if (state.shakeT <= 0) { state.shakeT = 0; state.shakeI = 0; }
+      else state.shakeI = state.shakeMax * (state.shakeT / state.shakeDur);
+    }
 
     if (state.rewinding) {
-      // pull back through buffer
+      // pull back through buffer (full-speed — slow-mo only on the dip)
       if (state.buffer.length > 1) {
         // step back at REWIND_RATE * BUFFER_FPS frames per sec
         state.bufferAcc += dt * REWIND_RATE * BUFFER_FPS;
@@ -653,10 +931,23 @@
       }
       if (!input.rewindHold || state.buffer.length <= 1) {
         // end rewind
+        // Fase 6 — Ghost Runner: full echo-trail = buffer fully consumed AND
+        // the buffer was near-full (>=80% of BUFFER_FRAMES) when we started.
+        // We use bufferPeak (largest seen this run); requiring >=80% avoids
+        // crediting trivially-short rewinds in the first 2s of a run.
+        if (state.buffer.length <= 1 && state.bufferPeak >= BUFFER_FRAMES * 0.8) {
+          state.ghostDrained = true;
+          unlockAch("ghost-runner");
+        }
         state.rewinding = false;
         state.rewindMeter = 0; // consumed
         state.rewindCooldown = REWIND_POST_LOCK_S;
         document.getElementById("rewindOverlay").classList.remove("on");
+        // Fase 4 §5 — kick off the exit ramp (0.4 -> 1.0 over 180ms).
+        state.slowmoPhase = "exit";
+        state.slowmoT = 0;
+        state.dtMul = SLOWMO_EXIT_START;
+        sfxRewindEnd();
         // build ghost line: use snapshot poses from buffer
         const pts = [];
         for (let i = 0; i < state.buffer.length; i += 2) {
@@ -668,42 +959,55 @@
       return;
     }
 
-    if (state.rewindCooldown > 0) state.rewindCooldown -= dt;
+    if (state.rewindCooldown > 0) state.rewindCooldown -= sdt;
 
     // difficulty curve — speed driven by explicit speedAt() on elapsed time
-    state.elapsed += dt;
+    state.elapsed += sdt;
     state.speed = speedAt(state.cfg, state.elapsed);
 
-    state.distance += state.speed * dt;
+    state.distance += state.speed * sdt;
 
     // jump arc — half-sine 0..1..0 over JUMP_S
     if (state.jumping) {
       const remain = state.jumpUntil - state.t;
       const progress = 1 - remain / JUMP_S;
       state.y = Math.sin(progress * Math.PI) * 1.4;
-      if (remain <= 0) { state.jumping = false; state.y = 0; }
+      if (remain <= 0) {
+        state.jumping = false; state.y = 0;
+        sfxLand(0.8); // landing thud
+      }
     } else {
       state.y = 0;
     }
     if (state.sliding && state.t > state.slideUntil) state.sliding = false;
 
     // run-cycle animation phase — stride frequency scales with speed (§6.4).
-    // speed runs ~6..18 → ~3.3..10 steps/s.
+    // speed runs ~6..18 → ~3.3..10 steps/s. Uses sdt so legs visibly slow
+    // with the world during the rewind-entry dip.
     const stepsPerSec = state.speed * 0.55;
-    state.animPhase = (state.animPhase + dt * stepsPerSec) % 1;
+    state.animPhase = (state.animPhase + sdt * stepsPerSec) % 1;
 
-    // cosmetic particles — module-scope, never enters the ringbuffer
-    updateParticles(dt);
+    // cosmetic particles — module-scope, never enters the ringbuffer.
+    // Particles use sdt too — sparkles slow with the scene during slow-mo.
+    updateParticles(sdt);
 
-    // smooth lane T toward lane
-    state.laneT += (state.lane - state.laneT) * Math.min(1, dt * 14);
+    // Fase 4 §4 — eased lane transition. easeOutCubic gives a snappy attack
+    // and soft settle; players feel the input land but it doesn't overshoot.
+    if (state.laneTx < 1) {
+      state.laneTx = Math.min(1, state.laneTx + sdt / LANE_TRANSITION_S);
+      const e = easeOutCubic(state.laneTx);
+      state.laneT = state.laneFromLane + (state.laneToLane - state.laneFromLane) * e;
+    } else {
+      // idle: keep laneT synced with current lane (no decay drift)
+      state.laneT = state.lane;
+    }
 
     // advance world: obstacles/coins move toward player (their z decreases)
-    for (const o of state.obstacles) o.z -= state.speed * dt;
-    for (const c of state.coins) c.z -= state.speed * dt;
+    for (const o of state.obstacles) o.z -= state.speed * sdt;
+    for (const c of state.coins) c.z -= state.speed * sdt;
 
     // spawn ahead — interval comes from the difficulty curve
-    state.nextSpawnZ -= state.speed * dt;
+    state.nextSpawnZ -= state.speed * sdt;
     while (state.nextSpawnZ < SPAWN_AHEAD) {
       spawnAt(SPAWN_AHEAD + Math.random() * 4);
       const gap = spawnIntervalAt(state.cfg, state.elapsed, state.speed);
@@ -721,27 +1025,39 @@
     // collision
     const hit = checkCollisions();
     if (hit) {
+      // Fase 4 §3 — punchy shake on death. Intensity scales lightly with speed
+      // so end-game collisions feel heavier than early ones, but never absurd.
+      const sc = Math.min(1.5, state.speed / 10);
+      addShake(12 * sc, 0.45);
+      sfxCollision();
+      state.unhit = false;   // Fase 6 — disqualify "Perfect Run" if we ever hit
       doGameOver();
       return;
     }
 
     // ringbuffer snapshot at BUFFER_FPS
-    state.bufferAcc += dt * BUFFER_FPS;
+    state.bufferAcc += sdt * BUFFER_FPS;
     while (state.bufferAcc >= 1) {
       state.buffer.push(snapshot());
       if (state.buffer.length > BUFFER_FRAMES) state.buffer.shift();
       state.bufferAcc -= 1;
     }
+    // Fase 6 — track peak buffer length for Ghost Runner achievement gating
+    if (state.buffer.length > state.bufferPeak) state.bufferPeak = state.buffer.length;
 
-    // meter charge
-    state.rewindMeter = Math.min(1, state.rewindMeter + dt / REWIND_FILL_S);
+    // meter charge — uses sdt so slow-mo dip doesn't gift extra meter
+    state.rewindMeter = Math.min(1, state.rewindMeter + sdt / REWIND_FILL_S);
 
-    // rewind trigger
-    if (input.rewindHold && state.rewindMeter >= 1 && state.rewindCooldown <= 0 && state.buffer.length > 4) {
-      state.rewinding = true;
-      state.rewindUsed = true;
-      state.bufferAcc = 0;
-      document.getElementById("rewindOverlay").classList.add("on");
+    // rewind trigger. Fase 4 §5 — instead of flipping rewinding immediately,
+    // arm the slow-mo entry phase. update()'s top block flips rewinding=true
+    // once the dip completes (~150ms later).
+    if (input.rewindHold && state.rewindMeter >= 1 && state.rewindCooldown <= 0
+        && state.buffer.length > 4
+        && state.slowmoPhase === "none" && !state.rewindArmed) {
+      state.rewindArmed = true;
+      state.slowmoPhase = "entry";
+      state.slowmoT = 0;
+      state.dtMul = 1;
     }
 
     // ghost life
@@ -752,6 +1068,25 @@
 
     // win-condition check (challenge levels only)
     checkWin();
+  }
+
+  // ---------- Fase 4 §4 — easing helpers ----------
+  function easeOutCubic(t) { const u = 1 - t; return 1 - u * u * u; }
+  // (easeInOutQuad kept around in case future polish wants symmetric feel.)
+  function easeInOutQuad(t) { return t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t + 2, 2) / 2; }
+
+  // ---------- Fase 4 §3 — screen shake ----------
+  // addShake(intensity, duration) — multiple calls take the louder/longer hit
+  // so chained collisions don't cancel each other out.
+  function addShake(intensity, duration) {
+    if (!state) return;
+    const i = Math.min(SHAKE_MAX_INTENSITY, intensity);
+    if (i > state.shakeMax) state.shakeMax = i;
+    if (duration > state.shakeT) {
+      state.shakeT = duration;
+      state.shakeDur = duration;
+    }
+    state.shakeI = state.shakeMax;
   }
 
   // ---------- win / end conditions ----------
@@ -769,6 +1104,7 @@
   function doGameOver() {
     state.running = false;
     state.gameOver = true;
+    musicStop();
     saveBest(state.score);
     const r = document.getElementById("result");
     document.getElementById("resultKicker").textContent =
@@ -790,8 +1126,11 @@
   function doLevelComplete() {
     state.running = false;
     state.won = true;
+    musicStop();
     saveBest(state.score);
     markLevelDone(state.mode);
+    // Fase 6 — credit per-level + perfect-run achievements
+    trackLevelCleared(state.mode, state.unhit, state.ghostDrained);
     const r = document.getElementById("result");
     document.getElementById("resultKicker").textContent = "LEVEL COMPLETE";
     document.getElementById("resultTitle").textContent = state.cfg.name;
@@ -825,6 +1164,19 @@
   }
   function render() {
     ctx.clearRect(0, 0, W, H);
+
+    // Fase 4 §3 — apply screen shake via ctx.save/translate/restore so we
+    // never accumulate transform drift. Random offset, weighted by intensity.
+    let shakeApplied = false;
+    if (state.shakeI > 0.1) {
+      const ang = Math.random() * Math.PI * 2;
+      const mag = state.shakeI;
+      const ox = Math.cos(ang) * mag;
+      const oy = Math.sin(ang) * mag;
+      ctx.save();
+      ctx.translate(ox, oy);
+      shakeApplied = true;
+    }
 
     // sky gradient handled by CSS, but draw distant glow
     const horizonY = H * HORIZON_Y_FRAC;
@@ -919,6 +1271,8 @@
     // foreground flair (Fase 3) — speed-lines, then sparkle particles, on top
     drawSpeedLines();
     drawParticles();
+
+    if (shakeApplied) ctx.restore();
   }
 
   // ---------- parallax render (Fase 3 §7) ----------
@@ -1118,6 +1472,7 @@
   const meterFill = document.getElementById("meterFill");
   const scoreEl = document.getElementById("score");
   const levelInfoEl = document.getElementById("levelInfo");
+  const nudgeEl = document.getElementById("nudge");
   function fmtTime(sec) {
     sec = Math.max(0, sec | 0);
     const m = (sec / 60) | 0, s = sec % 60;
@@ -1143,6 +1498,13 @@
       }
     } else {
       levelInfoEl.style.display = "none";
+    }
+    // Fase 5 §P1 — surviveAndRewind tutorial nudge.
+    if (nudgeEl) {
+      const win = state.cfg && state.cfg.win;
+      const showNudge = !!(state.running && win && win.type === "surviveAndRewind"
+                           && state.elapsed > 30 && !state.rewindUsed);
+      nudgeEl.classList.toggle("on", showNudge);
     }
   }
 
@@ -1170,20 +1532,513 @@
     } catch (e) { /* ignore */ }
   }
 
-  // ---------- level selector menu ----------
+  // ---------- Fase 6 — achievements ----------
+  // 8 gameplay-driven unlocks, stored as a flat id->true map in localStorage
+  // under "rrAchievements". Persistent counters (rrCoinTotal, rrRewindTotal,
+  // rrLaneTotal) live in their own keys so we don't rewrite the whole map on
+  // every coin-pickup. All read/write paths are wrapped in try/catch — corrupt
+  // storage falls back to defaults, never throws.
+  const ACHIEVEMENTS = [
+    { id: "first-rewind",     name: "First Rewind",
+      desc: "Use the rewind once.",                        icon: "↺" },
+    { id: "coin-collector",   name: "Coin Collector",
+      desc: "Collect 100 coins across all runs.",          icon: "●" },
+    { id: "speed-demon",      name: "Speed Demon",
+      desc: "Clear the Speed Demon level.",                icon: "⚡" },
+    { id: "marathon-master",  name: "Marathon Master",
+      desc: "Clear the Marathon level.",                   icon: "⚑" },
+    { id: "time-traveler",    name: "Time Traveler",
+      desc: "Use the rewind 20 times in total.",           icon: "⧖" },
+    { id: "perfect-run",      name: "Perfect Run",
+      desc: "Clear any level without a single collision.", icon: "★" },
+    { id: "lane-master",      name: "Lane Master",
+      desc: "Change lane 50 times in total.",              icon: "↔" },
+    { id: "ghost-runner",     name: "Ghost Runner",
+      desc: "Use a full 3-second rewind from a charged meter.", icon: "⚛" }
+  ];
+  function loadAch() {
+    try { return JSON.parse(localStorage.getItem("rrAchievements") || "{}") || {}; }
+    catch (e) { return {}; }
+  }
+  function saveAch(map) {
+    try { localStorage.setItem("rrAchievements", JSON.stringify(map)); }
+    catch (e) { /* ignore */ }
+  }
+  function loadCounter(key) {
+    try { return parseInt(localStorage.getItem(key) || "0", 10) || 0; }
+    catch (e) { return 0; }
+  }
+  function saveCounter(key, val) {
+    try { localStorage.setItem(key, String(val | 0)); }
+    catch (e) { /* ignore */ }
+  }
+  // Bump a numeric counter and return its new value.
+  function bumpCounter(key, by) {
+    const v = loadCounter(key) + (by | 0);
+    saveCounter(key, v);
+    return v;
+  }
+  // Unlock an achievement by id. Idempotent — re-unlocks silently do nothing.
+  // Queues a popup if it's actually new.
+  function unlockAch(id) {
+    const map = loadAch();
+    if (map[id]) return false;          // already unlocked, no popup
+    const def = ACHIEVEMENTS.find(a => a.id === id);
+    if (!def) return false;
+    map[id] = true;
+    saveAch(map);
+    queueAchPopup(def);
+    return true;
+  }
+
+  // Tracked actions. These are the *only* call-sites that touch counters /
+  // unlocks during gameplay — keeps the hot path predictable.
+  function trackRewindUsed() {
+    const tot = bumpCounter("rrRewindTotal", 1);
+    unlockAch("first-rewind");
+    if (tot >= 20) unlockAch("time-traveler");
+  }
+  function trackCoinCollected() {
+    const tot = bumpCounter("rrCoinTotal", 1);
+    if (tot >= 100) unlockAch("coin-collector");
+  }
+  function trackLaneChanged() {
+    const tot = bumpCounter("rrLaneTotal", 1);
+    if (tot >= 50) unlockAch("lane-master");
+  }
+  function trackLevelCleared(levelId, unhit, ghostDrained) {
+    if (levelId === "speed-demon")  unlockAch("speed-demon");
+    if (levelId === "marathon")     unlockAch("marathon-master");
+    if (unhit)                      unlockAch("perfect-run");
+    if (ghostDrained)               unlockAch("ghost-runner");
+  }
+
+  // ---------- Fase 6 — achievement popup queue ----------
+  // CSS slide-in from the top-right, 2s on-screen, then slides out. Multiple
+  // unlocks queue and play sequentially so concurrent triggers don't clobber
+  // each other (e.g. clearing Speed Demon also crosses Time Traveler).
+  const achQueue = [];
+  let achPopupTimer = 0;
+  function queueAchPopup(def) {
+    achQueue.push(def);
+    if (achPopupTimer === 0) drainAchQueue();
+  }
+  function drainAchQueue() {
+    if (!achQueue.length) { achPopupTimer = 0; return; }
+    const def = achQueue.shift();
+    const el = document.getElementById("achPopup");
+    const name = document.getElementById("achPopupName");
+    if (!el || !name) { achPopupTimer = 0; return; }
+    name.textContent = def.name;
+    el.classList.add("show");
+    achPopupTimer = setTimeout(() => {
+      el.classList.remove("show");
+      // Wait for the slide-out transition to finish before the next one
+      achPopupTimer = setTimeout(drainAchQueue, 380);
+    }, 2000);
+  }
+
+  // ---------- Fase 6 — toast (used by share-fallback) ----------
+  let toastTimer = 0;
+  function showToast(msg) {
+    const el = document.getElementById("toast");
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.add("show");
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove("show"), 1800);
+  }
+
+  // ---------- Fase 6 — share (Web Share API + clipboard fallback) ----------
+  // Builds the share payload from the current run's score/mode. The result
+  // screen has the share button — only visible after a run ends. Both branches
+  // are wrapped: if a user cancels web-share, no toast (user-initiated cancel
+  // is not an error). If clipboard fails too, we still don't throw.
+  function shareScore() {
+    const score = state && state.score ? state.score : 0;
+    const text = "I scored " + score + " in Rewind Runner! Try it: " + SHARE_URL;
+    if (navigator.share) {
+      navigator.share({ title: SHARE_TITLE, text: text, url: SHARE_URL })
+        .catch(() => { /* user cancelled — silent */ });
+      return;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text)
+        .then(() => showToast("Link copied"))
+        .catch(() => showToast("Copy failed"));
+      return;
+    }
+    // Last-ditch: prompt() so the link is at least selectable. No-throw fallback.
+    try { window.prompt("Copy this and share:", text); }
+    catch (e) { /* ignore */ }
+  }
+
+  // ---------- Fase 4 §1 + §2 — Audio (Web Audio synth only) ----------
+  // Lazy AudioContext: created on the first user gesture (click/tap/key).
+  // Mobile browsers (Safari especially) refuse to start audio otherwise.
+  // All envelopes use setValueAtTime + ramps — never `gain.value = X` mid-tone
+  // (that produces audible clicks). Try/catch the whole engine: if Web Audio
+  // is unavailable, gameplay continues silent.
+  const Audio = {
+    ctx: null,
+    master: null,
+    musicGain: null,
+    sfxGain: null,
+    muted: false,
+    musicOn: false,
+    bpm: BPM_MIN,
+    nextBeatTime: 0,
+    beatStep: 0,
+    lookAheadId: 0,
+  };
+
+  function audioInit() {
+    if (Audio.ctx) return Audio.ctx;
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      Audio.ctx = new AC();
+      Audio.master = Audio.ctx.createGain();
+      Audio.master.gain.value = Audio.muted ? 0 : 0.75;
+      Audio.master.connect(Audio.ctx.destination);
+      Audio.musicGain = Audio.ctx.createGain();
+      Audio.musicGain.gain.value = 0.4;
+      Audio.musicGain.connect(Audio.master);
+      Audio.sfxGain = Audio.ctx.createGain();
+      Audio.sfxGain.gain.value = 0.9;
+      Audio.sfxGain.connect(Audio.master);
+    } catch (e) { Audio.ctx = null; }
+    return Audio.ctx;
+  }
+  function audioResume() {
+    try {
+      if (Audio.ctx && Audio.ctx.state === "suspended") Audio.ctx.resume();
+    } catch (e) { /* ignore */ }
+  }
+  function setMuted(m) {
+    Audio.muted = m;
+    if (Audio.master) {
+      try {
+        const t = Audio.ctx.currentTime;
+        Audio.master.gain.cancelScheduledValues(t);
+        Audio.master.gain.setValueAtTime(Audio.master.gain.value, t);
+        Audio.master.gain.linearRampToValueAtTime(m ? 0 : 0.75, t + 0.05);
+      } catch (e) { /* ignore */ }
+    }
+    const btn = document.getElementById("muteBtn");
+    if (btn) {
+      btn.classList.toggle("muted", m);
+      btn.innerHTML = m ? "&#x1F507;" : "&#x1F509;";
+    }
+    try { localStorage.setItem("rrMute", m ? "1" : "0"); } catch (e) {}
+  }
+  function loadMute() {
+    try { return localStorage.getItem("rrMute") === "1"; }
+    catch (e) { return false; }
+  }
+
+  // ---- SFX helpers — short, allocate-on-trigger, stop after envelope decay
+  function _envOsc(type, freq, dur, peak, ramps) {
+    const ctx = Audio.ctx;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, ctx.currentTime);
+    if (ramps && ramps.freq) {
+      for (const r of ramps.freq) {
+        if (r.exp) o.frequency.exponentialRampToValueAtTime(r.v, ctx.currentTime + r.t);
+        else o.frequency.linearRampToValueAtTime(r.v, ctx.currentTime + r.t);
+      }
+    }
+    g.gain.setValueAtTime(0.0001, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(peak, ctx.currentTime + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+    o.connect(g);
+    g.connect(Audio.sfxGain);
+    o.start();
+    o.stop(ctx.currentTime + dur + 0.02);
+    return { o, g };
+  }
+  // 1) JUMP — short upward chirp
+  function sfxJump() {
+    if (!Audio.ctx || Audio.muted) return;
+    try {
+      _envOsc("square", 320, 0.18, 0.18, {
+        freq: [{ v: 720, t: 0.12, exp: true }]
+      });
+    } catch (e) {}
+  }
+  // 2) LAND — low thud
+  function sfxLand(strength) {
+    if (!Audio.ctx || Audio.muted) return;
+    try {
+      const st = strength || 1;
+      _envOsc("sine", 140, 0.14, 0.28 * st, {
+        freq: [{ v: 70, t: 0.12, exp: true }]
+      });
+    } catch (e) {}
+  }
+  // 3) COIN — bright 2-note bell (E6 -> B6 arpeggio)
+  function sfxCoin() {
+    if (!Audio.ctx || Audio.muted) return;
+    try {
+      _envOsc("triangle", 1318, 0.18, 0.22, {});      // E6
+      const ctx = Audio.ctx;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "triangle";
+      o.frequency.setValueAtTime(1975, ctx.currentTime + 0.07);
+      g.gain.setValueAtTime(0.0001, ctx.currentTime + 0.07);
+      g.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.08);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.28);
+      o.connect(g); g.connect(Audio.sfxGain);
+      o.start(ctx.currentTime + 0.07);
+      o.stop(ctx.currentTime + 0.32);
+    } catch (e) {}
+  }
+  // 4) LANE-CHANGE — subtle whoosh (filtered noise burst)
+  function sfxLaneChange() {
+    if (!Audio.ctx || Audio.muted) return;
+    try {
+      const ctx = Audio.ctx;
+      const len = (ctx.sampleRate * 0.08) | 0;
+      const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i/len);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const filt = ctx.createBiquadFilter();
+      filt.type = "bandpass";
+      filt.frequency.setValueAtTime(1800, ctx.currentTime);
+      filt.frequency.linearRampToValueAtTime(900, ctx.currentTime + 0.08);
+      filt.Q.value = 4;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, ctx.currentTime);
+      g.gain.linearRampToValueAtTime(0.16, ctx.currentTime + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.08);
+      src.connect(filt); filt.connect(g); g.connect(Audio.sfxGain);
+      src.start();
+      src.stop(ctx.currentTime + 0.09);
+    } catch (e) {}
+  }
+  // 5) COLLISION — down-pitched glitch noise
+  function sfxCollision() {
+    if (!Audio.ctx || Audio.muted) return;
+    try {
+      _envOsc("sawtooth", 320, 0.35, 0.32, {
+        freq: [{ v: 60, t: 0.3, exp: true }]
+      });
+      const ctx = Audio.ctx;
+      const len = (ctx.sampleRate * 0.3) | 0;
+      const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const filt = ctx.createBiquadFilter();
+      filt.type = "lowpass";
+      filt.frequency.setValueAtTime(1600, ctx.currentTime);
+      filt.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + 0.28);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, ctx.currentTime);
+      g.gain.linearRampToValueAtTime(0.24, ctx.currentTime + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.3);
+      src.connect(filt); filt.connect(g); g.connect(Audio.sfxGain);
+      src.start();
+      src.stop(ctx.currentTime + 0.32);
+    } catch (e) {}
+  }
+  // 6) REWIND-START — reverse-y sweep, slow attack
+  function sfxRewindStart() {
+    if (!Audio.ctx || Audio.muted) return;
+    try {
+      const ctx = Audio.ctx;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "sine";
+      o.frequency.setValueAtTime(120, ctx.currentTime);
+      o.frequency.linearRampToValueAtTime(880, ctx.currentTime + 0.45);
+      g.gain.setValueAtTime(0.0001, ctx.currentTime);
+      g.gain.linearRampToValueAtTime(0.22, ctx.currentTime + 0.30);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.55);
+      const filt = ctx.createBiquadFilter();
+      filt.type = "lowpass";
+      filt.frequency.setValueAtTime(400, ctx.currentTime);
+      filt.frequency.linearRampToValueAtTime(2400, ctx.currentTime + 0.5);
+      o.connect(filt); filt.connect(g); g.connect(Audio.sfxGain);
+      o.start();
+      o.stop(ctx.currentTime + 0.6);
+    } catch (e) {}
+  }
+  // 7) REWIND-END — forward bright snap
+  function sfxRewindEnd() {
+    if (!Audio.ctx || Audio.muted) return;
+    try {
+      _envOsc("square", 880, 0.16, 0.20, {
+        freq: [{ v: 1760, t: 0.08, exp: true },
+               { v: 660, t: 0.16, exp: true }]
+      });
+    } catch (e) {}
+  }
+
+  // ---- Procedural music (Fase 4 §2) ----
+  const SCALE = [0, 3, 5, 7, 10, 12, 15, 17];
+  const BASE_NOTE = 55;
+  const LEAD_BASE = 220;
+  function midiHz(semi) { return 440 * Math.pow(2, (semi - 9) / 12); }
+
+  function musicStart() {
+    if (!Audio.ctx) return;
+    if (Audio.musicOn) return;
+    Audio.musicOn = true;
+    Audio.nextBeatTime = Audio.ctx.currentTime + 0.1;
+    Audio.beatStep = 0;
+    musicScheduler();
+  }
+  function musicStop() {
+    Audio.musicOn = false;
+    if (Audio.lookAheadId) { clearTimeout(Audio.lookAheadId); Audio.lookAheadId = 0; }
+  }
+  function musicScheduler() {
+    if (!Audio.musicOn || !Audio.ctx) return;
+    const ctx = Audio.ctx;
+    if (state && state.cfg) {
+      const s = state.speed || state.cfg.speedStart;
+      const k = Math.max(0, Math.min(1, (s - 6) / 8));
+      const target = BPM_MIN + (BPM_MAX - BPM_MIN) * k;
+      Audio.bpm += (target - Audio.bpm) * 0.08;
+    }
+    const beatDur = 60 / Audio.bpm / 2;
+    const aheadHorizon = ctx.currentTime + 0.2;
+    while (Audio.nextBeatTime < aheadHorizon) {
+      scheduleStep(Audio.nextBeatTime, Audio.beatStep);
+      Audio.beatStep = (Audio.beatStep + 1) % 16;
+      Audio.nextBeatTime += beatDur;
+    }
+    Audio.lookAheadId = setTimeout(musicScheduler, 60);
+  }
+  function scheduleStep(time, step) {
+    const ctx = Audio.ctx;
+    try {
+      if (step % 4 === 0 || step === 7) {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = "sine";
+        const root = midiHz(BASE_NOTE + (step === 7 ? 7 : 0));
+        o.frequency.setValueAtTime(root, time);
+        o.frequency.exponentialRampToValueAtTime(root * 0.5, time + 0.18);
+        g.gain.setValueAtTime(0.0001, time);
+        g.gain.linearRampToValueAtTime(step === 7 ? 0.18 : 0.32, time + 0.005);
+        g.gain.exponentialRampToValueAtTime(0.0001, time + 0.22);
+        o.connect(g); g.connect(Audio.musicGain);
+        o.start(time);
+        o.stop(time + 0.25);
+      }
+      const noteIdx = SCALE[step % SCALE.length];
+      const freq = LEAD_BASE * Math.pow(2, noteIdx / 12);
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      const filt = ctx.createBiquadFilter();
+      o.type = (step % 4 === 2) ? "triangle" : "square";
+      o.frequency.setValueAtTime(freq, time);
+      filt.type = "lowpass";
+      const barPos = step / 16;
+      const sweepHz = 700 + 1700 * barPos;
+      filt.frequency.setValueAtTime(sweepHz, time);
+      filt.Q.value = 4;
+      g.gain.setValueAtTime(0.0001, time);
+      g.gain.linearRampToValueAtTime(0.12, time + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, time + 0.13);
+      o.connect(filt); filt.connect(g); g.connect(Audio.musicGain);
+      o.start(time);
+      o.stop(time + 0.16);
+    } catch (e) { /* skip beat on error, music keeps trying */ }
+  }
+
+  // Mute-button wiring + visibility handler.
+  const muteBtn = document.getElementById("muteBtn");
+  Audio.muted = loadMute();
+  if (muteBtn) {
+    muteBtn.innerHTML = Audio.muted ? "&#x1F507;" : "&#x1F509;";
+    muteBtn.classList.toggle("muted", Audio.muted);
+    muteBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      if (!Audio.ctx) { audioInit(); audioResume(); }
+      setMuted(!Audio.muted);
+    });
+  }
+  window.addEventListener("keydown", e => {
+    if (e.key && e.key.toLowerCase() === "m") {
+      if (!Audio.ctx) { audioInit(); audioResume(); }
+      setMuted(!Audio.muted);
+    }
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (!Audio.ctx) return;
+    try {
+      if (document.hidden) Audio.ctx.suspend();
+      else if (!Audio.muted) Audio.ctx.resume();
+    } catch (e) {}
+  });
+
+  // ---------- title / level selector menu (Fase 6 — split into title + menu) ----------
+  const titleEl = document.getElementById("title");
+  const titleBestEl = document.getElementById("titleBest");
+  const howtoEl = document.getElementById("howto");
+  const achievementsEl = document.getElementById("achievements");
   const menuEl = document.getElementById("menu");
   const resultEl = document.getElementById("result");
   const levelListEl = document.getElementById("levelList");
+  const achListEl = document.getElementById("achList");
+  const achCountEl = document.getElementById("achCount");
+
+  // Helper to swap overlays — only one .show at a time keeps focus + DOM tidy.
+  function showOverlay(el) {
+    [titleEl, howtoEl, achievementsEl, menuEl, resultEl].forEach(o => {
+      if (o) o.classList.remove("show");
+    });
+    if (el) el.classList.add("show");
+    if (levelInfoEl) levelInfoEl.style.display = "none";
+  }
 
   function buildMenu() {
     levelListEl.innerHTML = "";
     const done = doneLevels();
-    // Endless first
     levelListEl.appendChild(makeCard(LEVELS.endless, true, false));
-    // 8 challenge levels
     LEVELS.levels.forEach((lvl, i) => {
       levelListEl.appendChild(makeCard(lvl, false, !!done[lvl.id], i + 1));
     });
+  }
+
+  function refreshTitle() {
+    if (titleBestEl) titleBestEl.textContent = "BEST SCORE: " + bestScore();
+  }
+  // Build the achievements list — rendered every time the panel opens so newly
+  // unlocked rows reflect the current `rrAchievements` state.
+  function buildAchList() {
+    if (!achListEl) return;
+    achListEl.innerHTML = "";
+    const map = loadAch();
+    let unlockedCount = 0;
+    for (const def of ACHIEVEMENTS) {
+      const unlocked = !!map[def.id];
+      if (unlocked) unlockedCount++;
+      const row = document.createElement("div");
+      row.className = "achRow " + (unlocked ? "unlocked" : "locked");
+      const icon = document.createElement("div");
+      icon.className = "achIcon";
+      icon.textContent = unlocked ? def.icon : "?";
+      const body = document.createElement("div");
+      body.className = "achBody";
+      const name = document.createElement("div");
+      name.className = "achName"; name.textContent = def.name;
+      const desc = document.createElement("div");
+      desc.className = "achDesc"; desc.textContent = def.desc;
+      body.appendChild(name); body.appendChild(desc);
+      row.appendChild(icon); row.appendChild(body);
+      achListEl.appendChild(row);
+    }
+    if (achCountEl) achCountEl.textContent = unlockedCount + " / " + ACHIEVEMENTS.length + " UNLOCKED";
   }
   function makeCard(cfg, isEndless, isDone, num) {
     const card = document.createElement("button");
@@ -1217,9 +2072,22 @@
 
   function showMenu() {
     buildMenu();
-    resultEl.classList.remove("show");
-    menuEl.classList.add("show");
-    levelInfoEl.style.display = "none";
+    showOverlay(menuEl);
+    musicStop();   // Fase 4 — silence music while on menu
+  }
+  function showTitle() {
+    refreshTitle();
+    showOverlay(titleEl);
+    musicStop();
+  }
+  function showHowto() {
+    showOverlay(howtoEl);
+    musicStop();
+  }
+  function showAchievements() {
+    buildAchList();
+    showOverlay(achievementsEl);
+    musicStop();
   }
 
   // ---------- start / flow ----------
@@ -1228,13 +2096,44 @@
     state = freshState(cfg);
     state.running = true;
     clearParticles();   // particles live outside `state` — clear them per run
+    // Hide every overlay — gameplay should never show menu/title/result behind it.
+    if (titleEl) titleEl.classList.remove("show");
+    if (howtoEl) howtoEl.classList.remove("show");
+    if (achievementsEl) achievementsEl.classList.remove("show");
     menuEl.classList.remove("show");
     resultEl.classList.remove("show");
     document.getElementById("rewindOverlay").classList.remove("on");
+    // Fase 4 §2 — start music. audioInit() is a no-op if already created.
+    // startLevel runs from a click handler so user-gesture rules are satisfied.
+    if (!Audio.ctx) audioInit();
+    audioResume();
+    Audio.bpm = BPM_MIN;        // reset tempo so every run starts at base BPM
+    musicStop();                // ensure no double-scheduler from a retry
+    if (Audio.ctx) musicStart();
   }
 
   document.getElementById("retryBtn").addEventListener("click", () => startLevel(activeCfg));
   document.getElementById("menuBtn").addEventListener("click", showMenu);
+  // Fase 6 — title screen + ancillary buttons
+  const playBtn = document.getElementById("playBtn");
+  const levelSelectBtn = document.getElementById("levelSelectBtn");
+  const howtoBtn = document.getElementById("howtoBtn");
+  const achBtn = document.getElementById("achBtn");
+  const howtoCloseBtn = document.getElementById("howtoCloseBtn");
+  const achBackBtn = document.getElementById("achBackBtn");
+  const menuBackBtn = document.getElementById("menuBackBtn");
+  const resultTitleBtn = document.getElementById("resultTitleBtn");
+  const shareBtn = document.getElementById("shareBtn");
+  // PLAY: jump straight into Endless — fastest path from launch to gameplay.
+  if (playBtn) playBtn.addEventListener("click", () => startLevel(LEVELS.endless));
+  if (levelSelectBtn) levelSelectBtn.addEventListener("click", showMenu);
+  if (howtoBtn) howtoBtn.addEventListener("click", showHowto);
+  if (achBtn) achBtn.addEventListener("click", showAchievements);
+  if (howtoCloseBtn) howtoCloseBtn.addEventListener("click", showTitle);
+  if (achBackBtn) achBackBtn.addEventListener("click", showTitle);
+  if (menuBackBtn) menuBackBtn.addEventListener("click", showTitle);
+  if (resultTitleBtn) resultTitleBtn.addEventListener("click", showTitle);
+  if (shareBtn) shareBtn.addEventListener("click", shareScore);
 
   // ---------- loop ----------
   let lastT = 0;
@@ -1251,6 +2150,10 @@
   resize();                             // sizes canvas + builds parallax arrays
   state = freshState(LEVELS.endless);   // idle state so render()/syncUI() are safe
   buildMenu();
+  refreshTitle();                       // Fase 6 — populate "BEST SCORE: X" on title
+  // Stamp the version string into the title overlay. Single source of truth.
+  const titleVersionEl = document.getElementById("titleVersion");
+  if (titleVersionEl) titleVersionEl.textContent = "v" + GAME_VERSION;
   lastT = performance.now();
   requestAnimationFrame(frame);
 })();

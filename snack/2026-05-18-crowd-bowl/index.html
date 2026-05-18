@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Crowd Bowl</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; background: #1a1d2e; color: #f0f0e0; font-family: 'Courier New', monospace; overflow: hidden; -webkit-tap-highlight-color: transparent; }
+  #wrap { display: flex; flex-direction: column; height: 100vh; max-width: 720px; margin: 0 auto; padding: 6px; gap: 6px; }
+  #hud { display: flex; justify-content: space-between; background: #2a2d4e; padding: 6px 10px; border: 2px solid #50537a; font-size: 12px; image-rendering: pixelated; }
+  #hud span { color: #ffd95a; }
+  #stage { position: relative; flex: 1; min-height: 0; background: #2d6b3f; border: 2px solid #50537a; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; }
+  #overlay { position: absolute; inset: 0; pointer-events: none; display: flex; flex-direction: column; }
+  #voteBar { display: none; pointer-events: auto; background: rgba(20,22,40,0.92); padding: 8px; border-bottom: 2px solid #ffd95a; }
+  #voteBar.show { display: block; }
+  #voteHead { display: flex; justify-content: space-between; align-items: center; font-size: 12px; margin-bottom: 6px; }
+  #timer { color: #ff6464; font-weight: bold; }
+  #plays { display: flex; gap: 6px; }
+  .play { flex: 1; background: #3a3d5e; border: 2px solid #6a6d9e; color: #f0f0e0; padding: 8px 4px; font-family: inherit; font-size: 11px; cursor: pointer; text-align: center; position: relative; overflow: hidden; }
+  .play:active { transform: scale(0.96); }
+  .play .pct { display: block; font-size: 14px; color: #ffd95a; margin-top: 4px; font-weight: bold; }
+  .play .fill { position: absolute; left: 0; bottom: 0; height: 4px; background: #ffd95a; transition: width 0.2s; }
+  .play.override { border-color: #ff6464; }
+  #chat { position: absolute; right: 6px; top: 6px; width: 38%; max-width: 200px; max-height: 50%; overflow: hidden; pointer-events: none; font-size: 10px; }
+  .chatLine { background: rgba(0,0,0,0.55); color: #fff; padding: 2px 5px; margin-bottom: 2px; border-left: 2px solid #ffd95a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chatLine b { color: #9ad8ff; }
+  #controls { display: flex; gap: 6px; }
+  button.ctrl { flex: 1; background: #3a3d5e; border: 2px solid #6a6d9e; color: #f0f0e0; padding: 10px; font-family: inherit; font-size: 13px; cursor: pointer; }
+  button.ctrl:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.ctrl.hot { background: #7a2d2d; border-color: #ff6464; color: #ffd95a; }
+  #coach { font-size: 11px; padding: 4px 8px; background: #2a2d4e; border: 2px solid #50537a; }
+  #coach b { color: #9ad8ff; }
+  #screen { position: absolute; inset: 0; background: rgba(20,22,40,0.95); display: none; flex-direction: column; align-items: center; justify-content: center; pointer-events: auto; padding: 20px; text-align: center; }
+  #screen.show { display: flex; }
+  #screen h1 { color: #ffd95a; font-size: 28px; margin-bottom: 12px; }
+  #screen p { margin-bottom: 16px; font-size: 13px; line-height: 1.5; }
+  #screen button { background: #ffd95a; color: #1a1d2e; border: none; padding: 12px 24px; font-family: inherit; font-size: 16px; font-weight: bold; cursor: pointer; }
+  #msg { position: absolute; left: 50%; top: 40%; transform: translateX(-50%); background: rgba(0,0,0,0.7); color: #ffd95a; padding: 8px 16px; font-size: 16px; font-weight: bold; pointer-events: none; opacity: 0; transition: opacity 0.2s; }
+  #msg.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="hud">
+    <div>Q<span id="qNum">1</span> Play <span id="pNum">1</span>/3</div>
+    <div>YOU <span id="scoreP">0</span> - <span id="scoreO">0</span> CPU</div>
+    <div>Best: <span id="best">0</span> W:<span id="wins">0</span></div>
+  </div>
+  <div id="coach">Coach <b id="coachName">Calm Carl</b> <span id="coachMood">(conservative)</span> | Trust: <span id="trust">50</span>%</div>
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="overlay">
+      <div id="voteBar">
+        <div id="voteHead"><span>Crowd voting... <span id="timer">5.0</span>s</span><span id="vCount">0 votes</span></div>
+        <div id="plays"></div>
+      </div>
+      <div id="chat"></div>
+      <div id="msg"></div>
+    </div>
+    <div id="screen">
+      <h1 id="scrTitle">CROWD BOWL</h1>
+      <p id="scrBody">You're the QB. The crowd calls the plays. Survive 4 quarters.</p>
+      <button id="startBtn">START GAME</button>
+    </div>
+  </div>
+  <div id="controls">
+    <button class="ctrl" id="overrideBtn">OVERRIDE (1)</button>
+    <button class="ctrl" id="actionBtn">ACTION / SPACE</button>
+  </div>
+</div>
+<script>
+(function(){
+'use strict';
+
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+const W = 480, H = 270;
+cv.width = W; cv.height = H;
+
+const COACHES = [
+  { name: 'Calm Carl', mood: 'conservative', bias: [0.6, 0.3, 0.1] },
+  { name: 'Wild Wendy', mood: 'aggressive', bias: [0.15, 0.35, 0.5] },
+  { name: 'Gambler Greg', mood: 'risk-taker', bias: [0.2, 0.3, 0.5] },
+  { name: 'Panic Pete', mood: 'panicky', bias: [0.4, 0.4, 0.2] }
+];
+const CHATTERS = ['xX_QB1_Xx','PixelPam','HailMary99','CouchCoach','BlitzBro','RedZoneRita','Yardage','ChunkPlay','FumbleFred','EndZoneEd'];
+const EMOJIS = ['LUL','POG','HYPE','GG','BOO','5Head','PepeHands','Kappa','WutFace','EZ'];
+const PLAYS = [
+  { id:'run', name:'RUN', desc:'Safe 0-6 yds' },
+  { id:'short', name:'SHORT PASS', desc:'5-15 yds' },
+  { id:'long', name:'LONG BOMB', desc:'15-50 yds, risky' }
+];
+
+const state = {
+  scene: 'menu', quarter: 1, play: 1, scoreP: 0, scoreO: 0,
+  ballX: 60, fieldYards: 25,
+  coach: COACHES[0], trust: 50,
+  votes: [0,0,0], voteTime: 5, voting: false, chosen: null,
+  overrideAvail: true, overrideUsed: false,
+  qb: { x: 80, y: H/2, vy: 0 },
+  ball: null, receiver: null, defenders: [],
+  playPhase: 'idle', playTimer: 0, playResult: null,
+  chatLines: [], lastChatT: 0,
+  best: +localStorage.getItem('cb_best')||0,
+  wins: +localStorage.getItem('cb_wins')||0,
+  input: { up:false, down:false, action:false, touchY:null }
+};
+
+$('best').textContent = state.best;
+$('wins').textContent = state.wins;
+
+// ---- Input ----
+window.addEventListener('keydown', e => {
+  if (e.code === 'ArrowUp' || e.code === 'KeyW') state.input.up = true;
+  if (e.code === 'ArrowDown' || e.code === 'KeyS') state.input.down = true;
+  if (e.code === 'Space' || e.code === 'Enter') { state.input.action = true; e.preventDefault(); }
+});
+window.addEventListener('keyup', e => {
+  if (e.code === 'ArrowUp' || e.code === 'KeyW') state.input.up = false;
+  if (e.code === 'ArrowDown' || e.code === 'KeyS') state.input.down = false;
+  if (e.code === 'Space' || e.code === 'Enter') state.input.action = false;
+});
+cv.addEventListener('pointerdown', e => {
+  const r = cv.getBoundingClientRect();
+  state.input.touchY = ((e.clientY - r.top) / r.height) * H;
+  state.input.action = true;
+});
+cv.addEventListener('pointermove', e => {
+  if (state.input.touchY === null) return;
+  const r = cv.getBoundingClientRect();
+  state.input.touchY = ((e.clientY - r.top) / r.height) * H;
+});
+cv.addEventListener('pointerup', () => { state.input.touchY = null; state.input.action = false; });
+$('actionBtn').addEventListener('pointerdown', () => state.input.action = true);
+$('actionBtn').addEventListener('pointerup', () => state.input.action = false);
+
+// ---- Plays UI ----
+function buildPlayButtons(){
+  const cont = $('plays');
+  cont.textContent = '';
+  PLAYS.forEach((p, i) => {
+    const b = document.createElement('button');
+    b.className = 'play';
+    b.dataset.idx = i;
+    const n = document.createElement('div'); n.textContent = p.name; b.appendChild(n);
+    const d = document.createElement('div'); d.textContent = p.desc; d.style.fontSize='9px'; d.style.opacity='0.7'; b.appendChild(d);
+    const pct = document.createElement('span'); pct.className = 'pct'; pct.textContent = '0%'; pct.id = 'pct'+i; b.appendChild(pct);
+    const fill = document.createElement('span'); fill.className = 'fill'; fill.id = 'fill'+i; b.appendChild(fill);
+    b.addEventListener('click', () => onPlayClick(i));
+    cont.appendChild(b);
+  });
+}
+buildPlayButtons();
+
+function onPlayClick(i){
+  if (!state.voting) return;
+  if (!state.overrideArmed) return;
+  state.overrideArmed = false;
+  state.overrideUsed = true;
+  state.overrideAvail = false;
+  state.chosen = i;
+  endVote(true);
+}
+
+$('overrideBtn').addEventListener('click', () => {
+  if (!state.voting || !state.overrideAvail || state.overrideUsed) return;
+  state.overrideArmed = true;
+  showMsg('Tap a play to OVERRIDE!');
+  document.querySelectorAll('.play').forEach(p => p.classList.add('override'));
+});
+
+$('startBtn').addEventListener('click', startGame);
+
+// ---- Chat sim ----
+function addChat(user, text){
+  state.chatLines.push({ u:user, t:text, age:0 });
+  if (state.chatLines.length > 6) state.chatLines.shift();
+  renderChat();
+}
+function renderChat(){
+  const c = $('chat'); c.textContent = '';
+  state.chatLines.forEach(l => {
+    const div = document.createElement('div');
+    div.className = 'chatLine';
+    const b = document.createElement('b');
+    b.textContent = l.u + ': ';
+    div.appendChild(b);
+    div.appendChild(document.createTextNode(l.t));
+    c.appendChild(div);
+  });
+}
+function simChat(dt){
+  state.lastChatT += dt;
+  const rate = state.voting ? 0.35 : 1.2;
+  if (state.lastChatT > rate){
+    state.lastChatT = 0;
+    const u = CHATTERS[(Math.random()*CHATTERS.length)|0];
+    let t;
+    if (state.voting && Math.random() < 0.6){
+      const v = (Math.random()*3)|0;
+      t = '!play ' + (v+1);
+      state.votes[v]++;
+    } else {
+      t = EMOJIS[(Math.random()*EMOJIS.length)|0];
+    }
+    addChat(u, t);
+  }
+}
+
+// ---- Coach AI vote ----
+function coachVote(){
+  // Coach adds ~3-7 weighted votes over the duration
+  const r = Math.random();
+  const b = state.coach.bias;
+  let idx = 0, acc = 0;
+  for (let i=0;i<3;i++){ acc += b[i]; if (r < acc){ idx = i; break; } }
+  state.votes[idx]++;
+}
+
+// ---- Game flow ----
+function startGame(){
+  state.quarter = 1; state.play = 1; state.scoreP = 0; state.scoreO = 0;
+  state.coach = COACHES[(Math.random()*COACHES.length)|0];
+  state.trust = 50; state.overrideAvail = true; state.overrideUsed = false;
+  state.ballX = 60; state.chatLines = [];
+  $('screen').classList.remove('show');
+  $('coachName').textContent = state.coach.name;
+  $('coachMood').textContent = '(' + state.coach.mood + ')';
+  updateHud();
+  nextPlay();
+}
+
+function nextPlay(){
+  if (state.quarter > 4){ endGame(); return; }
+  state.overrideAvail = !state.overrideUsed;
+  $('overrideBtn').disabled = !state.overrideAvail;
+  $('overrideBtn').textContent = state.overrideAvail ? 'OVERRIDE (1)' : 'OVERRIDE used';
+  startVote();
+}
+
+function startVote(){
+  state.scene = 'vote';
+  state.voting = true;
+  state.voteTime = 5;
+  state.votes = [0,0,0];
+  state.chosen = null;
+  state.overrideArmed = false;
+  document.querySelectorAll('.play').forEach(p => p.classList.remove('override'));
+  $('voteBar').classList.add('show');
+  showMsg('Crowd voting!');
+}
+
+function endVote(forced){
+  state.voting = false;
+  $('voteBar').classList.remove('show');
+  if (!forced){
+    let best = 0;
+    for (let i=1;i<3;i++) if (state.votes[i] > state.votes[best]) best = i;
+    state.chosen = best;
+  }
+  showMsg('Play: ' + PLAYS[state.chosen].name);
+  setupPlayExec(state.chosen);
+}
+
+function setupPlayExec(idx){
+  state.scene = 'play';
+  state.playPhase = 'aim';
+  state.playTimer = 0;
+  state.qb.x = 80; state.qb.y = H/2; state.qb.vy = 0;
+  state.ball = null;
+  state.defenders = [];
+  state.playResult = null;
+  const dCount = idx === 0 ? 4 : (idx === 1 ? 3 : 2);
+  for (let i=0;i<dCount;i++){
+    state.defenders.push({
+      x: 180 + Math.random()*200,
+      y: 40 + Math.random()*(H-80),
+      vx: -20 - Math.random()*30,
+      vy: (Math.random()-0.5)*40
+    });
+  }
+  if (idx === 0){
+    state.receiver = null;
+  } else {
+    const dist = idx === 1 ? 140 : 280;
+    state.receiver = { x: state.qb.x + dist, y: 60 + Math.random()*(H-120), vx: 60 + idx*20, caught: false };
+  }
+}
+
+function executePlay(dt){
+  state.playTimer += dt;
+  const idx = state.chosen;
+  const sp = 80;
+  // Move QB
+  let dy = 0;
+  if (state.input.up) dy -= 1;
+  if (state.input.down) dy += 1;
+  if (state.input.touchY !== null){
+    const diff = state.input.touchY - state.qb.y;
+    dy = Math.max(-1, Math.min(1, diff/20));
+  }
+  state.qb.y += dy * sp * dt;
+  state.qb.y = Math.max(20, Math.min(H-20, state.qb.y));
+
+  // Move defenders
+  state.defenders.forEach(d => {
+    d.x += d.vx * dt;
+    d.y += d.vy * dt;
+    if (d.y < 20 || d.y > H-20) d.vy *= -1;
+  });
+
+  if (idx === 0){
+    // RUN: move QB forward on action hold
+    if (state.input.action) state.qb.x += 90 * dt;
+    // collision
+    for (const d of state.defenders){
+      if (Math.abs(d.x - state.qb.x) < 10 && Math.abs(d.y - state.qb.y) < 12){
+        return resolvePlay(Math.max(0, Math.floor((state.qb.x - 80) / 6)));
+      }
+    }
+    if (state.qb.x > W - 30){
+      return resolvePlay(Math.floor((state.qb.x - 80) / 6));
+    }
+    if (state.playTimer > 4){
+      return resolvePlay(Math.max(0, Math.floor((state.qb.x - 80) / 6)));
+    }
+  } else {
+    // PASS: receiver runs, press action to throw
+    if (state.receiver && !state.ball){
+      state.receiver.x += state.receiver.vx * dt;
+      if (state.receiver.x > W - 30) state.receiver.x = W - 30;
+      if (state.input.action){
+        state.ball = { x: state.qb.x, y: state.qb.y, tx: state.receiver.x, ty: state.receiver.y, t: 0, dur: idx === 1 ? 0.6 : 1.0 };
+      }
+    }
+    if (state.ball){
+      state.ball.t += dt;
+      const p = Math.min(1, state.ball.t / state.ball.dur);
+      state.ball.x = state.qb.x + (state.ball.tx - state.qb.x) * p;
+      state.ball.y = state.qb.y + (state.ball.ty - state.qb.y) * p - Math.sin(p*Math.PI)*30;
+      // intercept check
+      for (const d of state.defenders){
+        if (Math.abs(d.x - state.ball.x) < 10 && Math.abs(d.y - state.ball.y) < 10 && p < 0.95){
+          return resolvePlay(-5, true);
+        }
+      }
+      if (p >= 1){
+        // catch chance based on receiver proximity to target
+        const dx = state.receiver.x - state.ball.tx;
+        const dy2 = state.receiver.y - state.ball.ty;
+        const dist = Math.hypot(dx, dy2);
+        if (dist < 30){
+          const yards = Math.floor((state.receiver.x - 80) / 6);
+          return resolvePlay(yards);
+        } else {
+          return resolvePlay(0);
+        }
+      }
+    }
+    if (state.playTimer > 5 && !state.ball){
+      return resolvePlay(-3, false); // sack
+    }
+  }
+}
+
+function resolvePlay(yards, intercept){
+  if (state.playResult) return;
+  state.playResult = { yards, intercept };
+  state.ballX += yards;
+  let pts = 0;
+  if (state.ballX >= 100 || yards >= 30){
+    pts = 7; state.ballX = 60;
+    showMsg('TOUCHDOWN! +7');
+  } else if (intercept){
+    state.scoreO += 7; state.ballX = 60;
+    showMsg('INTERCEPTED! -7');
+    state.trust = Math.max(0, state.trust - 8);
+  } else if (yards >= 10){
+    showMsg('+' + yards + ' yds! First down!');
+    state.trust = Math.min(100, state.trust + 4);
+  } else if (yards > 0){
+    showMsg('+' + yards + ' yds');
+    state.trust = Math.min(100, state.trust + 1);
+  } else if (yards === 0){
+    showMsg('Incomplete');
+    state.trust = Math.max(0, state.trust - 2);
+  } else {
+    showMsg(yards + ' yds, sacked!');
+    state.trust = Math.max(0, state.trust - 3);
+  }
+  state.scoreP += pts;
+  // simulate CPU response occasionally
+  if (Math.random() < 0.35 && pts === 0) state.scoreO += 3;
+  updateHud();
+  setTimeout(advance, 1400);
+}
+
+function advance(){
+  state.play++;
+  if (state.play > 3){
+    state.play = 1;
+    state.quarter++;
+    state.overrideUsed = false; // refresh per quarter
+    // sometimes rotate coach
+    if (Math.random() < 0.4){
+      state.coach = COACHES[(Math.random()*COACHES.length)|0];
+      $('coachName').textContent = state.coach.name;
+      $('coachMood').textContent = '(' + state.coach.mood + ')';
+    }
+  }
+  updateHud();
+  nextPlay();
+}
+
+function endGame(){
+  state.scene = 'over';
+  const win = state.scoreP > state.scoreO;
+  if (state.scoreP > state.best){ state.best = state.scoreP; localStorage.setItem('cb_best', state.best); }
+  if (win){ state.wins++; localStorage.setItem('cb_wins', state.wins); }
+  $('best').textContent = state.best;
+  $('wins').textContent = state.wins;
+  $('scrTitle').textContent = win ? 'YOU WIN!' : 'GAME OVER';
+  $('scrBody').textContent = 'Final: ' + state.scoreP + ' - ' + state.scoreO + '. Crowd trust: ' + state.trust + '%. ' + (win ? 'The crowd loves you.' : 'The crowd is booing.');
+  $('startBtn').textContent = 'PLAY AGAIN';
+  $('screen').classList.add('show');
+}
+
+function updateHud(){
+  $('qNum').textContent = state.quarter;
+  $('pNum').textContent = state.play;
+  $('scoreP').textContent = state.scoreP;
+  $('scoreO').textContent = state.scoreO;
+  $('trust').textContent = state.trust;
+}
+
+let msgTimer = 0;
+function showMsg(t){
+  const m = $('msg'); m.textContent = t; m.classList.add('show'); msgTimer = 1.5;
+}
+
+// ---- Update / Render ----
+function update(dt){
+  if (state.scene === 'vote'){
+    state.voteTime -= dt;
+    $('timer').textContent = state.voteTime.toFixed(1);
+    if (Math.random() < dt * 1.5) coachVote();
+    const total = state.votes[0] + state.votes[1] + state.votes[2];
+    $('vCount').textContent = total + ' votes';
+    for (let i=0;i<3;i++){
+      const pct = total ? Math.round(state.votes[i] / total * 100) : 0;
+      $('pct'+i).textContent = pct + '%';
+      $('fill'+i).style.width = pct + '%';
+    }
+    if (state.voteTime <= 0) endVote(false);
+  }
+  if (state.scene === 'play') executePlay(dt);
+  simChat(dt);
+  if (msgTimer > 0){
+    msgTimer -= dt;
+    if (msgTimer <= 0) $('msg').classList.remove('show');
+  }
+}
+
+function drawField(){
+  ctx.fillStyle = '#2d6b3f';
+  ctx.fillRect(0,0,W,H);
+  // yard lines
+  ctx.strokeStyle = '#5a9460';
+  ctx.lineWidth = 1;
+  for (let i=0;i<=10;i++){
+    const x = 60 + i*(W-100)/10;
+    ctx.beginPath(); ctx.moveTo(x, 10); ctx.lineTo(x, H-10); ctx.stroke();
+  }
+  // end zones
+  ctx.fillStyle = '#1f4a2c';
+  ctx.fillRect(0,0,60,H);
+  ctx.fillRect(W-40,0,40,H);
+  // hash
+  ctx.fillStyle = '#fff';
+  ctx.font = '10px monospace';
+  ctx.fillText('END', 12, H/2);
+  // ball position marker on bottom
+  const markX = 60 + (state.ballX-60) * 3.2;
+  ctx.fillStyle = '#ffd95a';
+  ctx.fillRect(markX-2, H-8, 4, 6);
+}
+
+function drawPixelMan(x, y, color){
+  ctx.fillStyle = color;
+  ctx.fillRect(x-3, y-8, 6, 4);   // head
+  ctx.fillRect(x-4, y-4, 8, 8);   // body
+  ctx.fillRect(x-3, y+4, 3, 4);   // leg
+  ctx.fillRect(x, y+4, 3, 4);     // leg
+}
+
+function render(){
+  drawField();
+  if (state.scene === 'play' || state.scene === 'vote'){
+    // QB
+    drawPixelMan(state.qb.x, state.qb.y, '#ffd95a');
+    // Receiver
+    if (state.receiver) drawPixelMan(state.receiver.x, state.receiver.y, '#9ad8ff');
+    // Defenders
+    state.defenders.forEach(d => drawPixelMan(d.x, d.y, '#ff6464'));
+    // Ball
+    if (state.ball){
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(state.ball.x-2, state.ball.y-2, 4, 4);
+    }
+  }
+  // hint
+  if (state.scene === 'play'){
+    ctx.fillStyle = '#fff';
+    ctx.font = '9px monospace';
+    const hint = state.chosen === 0 ? 'HOLD ACTION to run' : 'Move with arrows/touch, ACTION to throw';
+    ctx.fillText(hint, 8, H-14);
+  }
+}
+
+let last = performance.now();
+function loop(now){
+  let dt = (now - last) / 1000;
+  last = now;
+  if (dt > 0.05) dt = 0.05; // clamp
+  if (state.scene !== 'menu' && state.scene !== 'over') update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// Show start screen
+$('screen').classList.add('show');
+
+})();
+</script>
+</body>
+</html>
