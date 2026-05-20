@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Echo Racer</title>
+<style>
+  :root { --bg:#0d1117; --track:#2a2f3a; --line:#4a5160; --fg:#e6edf3; --accent:#42e6a4; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { height:100%; }
+  body { background:var(--bg); color:var(--fg); font-family:system-ui,sans-serif;
+         display:flex; flex-direction:column; align-items:center; justify-content:center;
+         overflow:hidden; touch-action:none; user-select:none; }
+  #wrap { width:100%; max-width:640px; padding:8px; }
+  h1 { font-size:18px; text-align:center; margin-bottom:6px; color:var(--accent); }
+  #hud { display:flex; justify-content:space-between; font-size:13px; margin:4px 0; }
+  canvas { width:100%; background:var(--bg); border-radius:8px; display:block; touch-action:none; }
+  .row { display:flex; gap:6px; flex-wrap:wrap; justify-content:center; margin-top:6px; }
+  button { background:var(--track); color:var(--fg); border:1px solid var(--line);
+           padding:8px 12px; border-radius:6px; font-size:13px; cursor:pointer; }
+  button.on { background:var(--accent); color:#062; border-color:var(--accent); }
+  button:active { transform:scale(0.96); }
+  #msg { text-align:center; font-size:14px; min-height:20px; margin-top:4px; color:var(--accent); }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <h1>ECHO RACER — race tegen jezelf</h1>
+  <div id="hud">
+    <span id="time">Tijd: 0.00</span>
+    <span id="best">Beste: --</span>
+    <span id="cp">CP: 0/0</span>
+  </div>
+  <canvas id="cv" width="600" height="600"></canvas>
+  <div id="msg">Kies een baan en rijd je eerste run.</div>
+  <div class="row" id="trackRow"></div>
+  <div class="row">
+    <button id="coachBtn">Coach line: uit</button>
+    <button id="eraseBtn">Erase ghosts</button>
+    <button id="restartBtn">Opnieuw</button>
+  </div>
+  <div id="msg" style="font-size:11px;opacity:.6;margin-top:6px;text-align:center">
+    Pijltjes / WASD om te sturen &amp; gas geven. Op touch: links/rechts onderkant = sturen, bovenkant = gas.
+  </div>
+</div>
+<script>
+"use strict";
+// ---- Config ----
+const W = 600, H = 600;
+const REC_INTERVAL = 100;   // ms tussen ghost-frames (ringbuffer-tick)
+const MAX_GHOSTS = 7;
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+
+// ---- Track definities (waypoint-paden voor checkpoints + tekenen) ----
+// Elke baan: center-pad als lijst punten; checkpoints worden hieruit afgeleid.
+const TRACKS = {
+  oval: { name:"Oval", path:[
+    [150,150],[450,150],[450,450],[150,450] ], closed:true, width:90 },
+  scurve: { name:"S-Curve", path:[
+    [120,120],[480,120],[480,300],[120,300],[120,480],[480,480] ], closed:false, width:80 },
+  fig8: { name:"Figure-8", path:[
+    [150,150],[450,450],[450,150],[150,450] ], closed:true, width:80 }
+};
+let trackId = "oval";
+
+// ---- Game state ----
+const car = { x:0, y:0, heading:0, speed:0 };
+let checkpoints = [];      // {x,y,r}
+let nextCp = 0;            // index van te passeren checkpoint
+let lapStart = 0, lapTime = 0, racing = false, finished = false;
+let recBuffer = [];        // huidige run: {x,y,heading} elke REC_INTERVAL
+let recAccum = 0;
+let ghosts = [];           // {time, frames:[{x,y,heading}], run}
+let runCounter = 0;        // loopnummer voor naam-tags
+let coachMode = false;
+let lastTs = 0;
+
+// ---- Input ----
+const keys = {};
+addEventListener("keydown", e => { keys[e.key.toLowerCase()] = true; });
+addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
+// Touch: deel canvas op in zones (boven = gas, onderlinks/rechts = sturen)
+const touch = { steer:0, gas:false };
+function handleTouch(e) {
+  touch.steer = 0; touch.gas = false;
+  const r = cv.getBoundingClientRect();
+  for (const t of e.touches) {
+    const x = (t.clientX - r.left) / r.width;
+    const y = (t.clientY - r.top) / r.height;
+    if (y < 0.5) touch.gas = true;
+    else if (x < 0.5) touch.steer = -1;
+    else touch.steer = 1;
+  }
+  e.preventDefault();
+}
+cv.addEventListener("touchstart", handleTouch, {passive:false});
+cv.addEventListener("touchmove", handleTouch, {passive:false});
+cv.addEventListener("touchend", handleTouch, {passive:false});
+
+// ---- localStorage: ghosts laden/opslaan met STRENGE validatie ----
+function lsKey() { return "echoRacer_ghosts_" + trackId; }
+function loadGhosts() {
+  let parsed = null;
+  try { parsed = JSON.parse(localStorage.getItem(lsKey())); }
+  catch (e) { parsed = null; }
+  // KRITIEKE FIX: valideer datastructuur streng. Een corrupte waarde zoals
+  // "[null,null]" parst als array maar bevat ongeldige ghosts -> filter weg.
+  ghosts = (Array.isArray(parsed) ? parsed : []).filter(g =>
+    g && typeof g === "object" &&
+    Array.isArray(g.frames) && g.frames.length > 0 &&
+    g.frames.every(f => f && typeof f.x === "number" && typeof f.y === "number"
+                          && typeof f.heading === "number") &&
+    typeof g.time === "number"
+  );
+  // run-counter doortellen op basis van bestaande ghosts
+  runCounter = ghosts.reduce((m,g)=> Math.max(m, g.run||0), 0);
+}
+function saveGhosts() {
+  try { localStorage.setItem(lsKey(), JSON.stringify(ghosts)); }
+  catch (e) { /* quota / private mode: stilletjes negeren */ }
+}
+
+// ---- Track opbouwen: checkpoints langs het pad ----
+function buildTrack() {
+  const t = TRACKS[trackId];
+  checkpoints = [];
+  const pts = t.path;
+  const segCount = t.closed ? pts.length : pts.length - 1;
+  // 2 checkpoints per segment voor genoeg granulariteit
+  for (let s = 0; s < segCount; s++) {
+    const a = pts[s], b = pts[(s+1) % pts.length];
+    for (let k = 0; k < 2; k++) {
+      const f = (k + 0.5) / 2;
+      checkpoints.push({ x: a[0]+(b[0]-a[0])*f, y: a[1]+(b[1]-a[1])*f, r: 38 });
+    }
+  }
+  nextCp = 0;
+  resetCar();
+}
+
+function resetCar() {
+  const t = TRACKS[trackId];
+  const a = t.path[0], b = t.path[1];
+  car.x = a[0]; car.y = a[1];
+  // KRITIEKE FIX: start-heading wijst LANGS de baan (richting eerste segment),
+  // niet willekeurig omlaag/off-road.
+  car.heading = Math.atan2(b[1]-a[1], b[0]-a[0]);
+  car.speed = 0;
+  recBuffer = []; recAccum = 0;
+  lapTime = 0; racing = false; finished = false;
+}
+
+// ---- Update ----
+function update(dt) {
+  // dt in seconden
+  let steer = touch.steer, gas = touch.gas, brake = false;
+  if (keys["arrowleft"] || keys["a"]) steer -= 1;
+  if (keys["arrowright"] || keys["d"]) steer += 1;
+  if (keys["arrowup"] || keys["w"]) gas = true;
+  if (keys["arrowdown"] || keys["s"]) brake = true;
+
+  if (!finished) {
+    const ACCEL = 220, MAXSPD = 260, FRICTION = 90, TURN = 2.9;
+    if (gas) car.speed += ACCEL * dt;
+    else car.speed -= FRICTION * dt;
+    if (brake) car.speed -= ACCEL * 1.2 * dt;
+    car.speed = Math.max(0, Math.min(MAXSPD, car.speed));
+    // sturen schaalt mee met snelheid zodat stilstaand draaien niet kan
+    const turnRate = TURN * Math.min(1, car.speed / 60);
+    car.heading += steer * turnRate * dt;
+    car.x += Math.cos(car.heading) * car.speed * dt;
+    car.y += Math.sin(car.heading) * car.speed * dt;
+    car.x = Math.max(10, Math.min(W-10, car.x));
+    car.y = Math.max(10, Math.min(H-10, car.y));
+
+    // start de race bij eerste beweging
+    if (!racing && car.speed > 5) { racing = true; lapStart = performance.now(); }
+
+    if (racing) {
+      lapTime = (performance.now() - lapStart) / 1000;
+      // checkpoint-detectie: moet ze in volgorde passeren
+      const cp = checkpoints[nextCp];
+      if (cp && dist(car.x, car.y, cp.x, cp.y) < cp.r) {
+        nextCp++;
+        if (nextCp >= checkpoints.length) finishLap();
+      }
+      // ghost-frame opnemen (ringbuffer-tick)
+      recAccum += dt * 1000;
+      while (recAccum >= REC_INTERVAL) {
+        recAccum -= REC_INTERVAL;
+        recBuffer.push({ x:car.x, y:car.y, heading:car.heading });
+      }
+    }
+  }
+}
+
+function dist(ax,ay,bx,by){ const dx=ax-bx, dy=ay-by; return Math.sqrt(dx*dx+dy*dy); }
+
+function finishLap() {
+  finished = true; racing = false;
+  // laatste frame vastleggen
+  recBuffer.push({ x:car.x, y:car.y, heading:car.heading });
+  runCounter++;
+  const newGhost = { time: lapTime, frames: recBuffer.slice(), run: runCounter };
+  ghosts.push(newGhost);
+  // sorteer op tijd, hou de 7 snelste (oudste/slechtste valt eruit)
+  ghosts.sort((a,b)=> a.time - b.time);
+  if (ghosts.length > MAX_GHOSTS) ghosts = ghosts.slice(0, MAX_GHOSTS);
+  saveGhosts();
+  const best = ghosts[0].time;
+  document.getElementById("msg").textContent =
+    `Lap klaar in ${lapTime.toFixed(2)}s ` +
+    (lapTime <= best + 0.001 ? "— nieuwe beste tijd!" : `(beste: ${best.toFixed(2)}s)`);
+}
+
+// ---- Ghost-positie via interpolatie op een gegeven tijd ----
+function ghostPose(g, timeSec) {
+  const frames = g.frames;
+  const fidx = timeSec * 1000 / REC_INTERVAL;
+  const i = Math.floor(fidx);
+  if (i >= frames.length - 1) return frames[frames.length - 1];
+  const a = frames[i], b = frames[i+1], f = fidx - i;
+  return {
+    x: a.x + (b.x - a.x) * f,
+    y: a.y + (b.y - a.y) * f,
+    // korte-weg interpolatie van heading
+    heading: a.heading + angDiff(a.heading, b.heading) * f
+  };
+}
+function angDiff(a,b){ let d=(b-a)%(Math.PI*2); if(d>Math.PI)d-=Math.PI*2; if(d<-Math.PI)d+=Math.PI*2; return d; }
+
+// ---- Render ----
+function drawCar(x, y, heading, color, alpha, label) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(x, y);
+  ctx.rotate(heading);
+  ctx.fillStyle = color;
+  ctx.fillRect(-10, -6, 20, 12);
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(4, -5, 5, 10); // voorruit-hint = rijrichting
+  ctx.restore();
+  if (label) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, alpha + 0.25);
+    ctx.fillStyle = color;
+    ctx.font = "10px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(label, x, y - 14);
+    ctx.restore();
+  }
+}
+
+function render() {
+  ctx.clearRect(0, 0, W, H);
+  const t = TRACKS[trackId];
+  // baan tekenen als dik pad
+  ctx.strokeStyle = "#2a2f3a";
+  ctx.lineWidth = t.width;
+  ctx.lineJoin = "round"; ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(t.path[0][0], t.path[0][1]);
+  for (let i = 1; i < t.path.length; i++) ctx.lineTo(t.path[i][0], t.path[i][1]);
+  if (t.closed) ctx.closePath();
+  ctx.stroke();
+  // middenstreep
+  ctx.strokeStyle = "#4a5160";
+  ctx.lineWidth = 2;
+  ctx.setLineDash([8, 10]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // checkpoints: volgende geel, rest grijs
+  for (let i = 0; i < checkpoints.length; i++) {
+    const cp = checkpoints[i];
+    ctx.beginPath();
+    ctx.arc(cp.x, cp.y, cp.r, 0, Math.PI*2);
+    ctx.strokeStyle = (i === nextCp) ? "#f0d040" : "rgba(255,255,255,0.08)";
+    ctx.lineWidth = (i === nextCp) ? 3 : 1;
+    ctx.stroke();
+  }
+  // start/finish
+  ctx.fillStyle = "#fff";
+  ctx.font = "11px sans-serif"; ctx.textAlign = "center";
+  ctx.fillText("START", t.path[0][0], t.path[0][1] - 6);
+
+  // coach-line: stippellijn van beste ghost
+  if (coachMode && ghosts.length > 0) {
+    const best = ghosts[0];
+    ctx.strokeStyle = "rgba(66,230,164,0.7)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 8]);
+    ctx.beginPath();
+    ctx.moveTo(best.frames[0].x, best.frames[0].y);
+    for (const f of best.frames) ctx.lineTo(f.x, f.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // ghosts tekenen op huidige laptijd (transparant, met naam-tag)
+  const tSec = racing ? lapTime : 0;
+  ghosts.forEach((g, idx) => {
+    // defensief: skip ongeldige ghost (kan niet voorkomen na validatie, maar veilig)
+    if (!g || !Array.isArray(g.frames) || g.frames.length === 0) return;
+    const pose = ghostPose(g, tSec);
+    if (!pose) return;
+    drawCar(pose.x, pose.y, pose.heading, "#7f8cff", 0.35, "Run #" + g.run);
+  });
+
+  // live speler
+  drawCar(car.x, car.y, car.heading, "#42e6a4", 1, null);
+}
+
+// ---- Game loop ----
+function loop(ts) {
+  if (!lastTs) lastTs = ts;
+  let dt = (ts - lastTs) / 1000;
+  lastTs = ts;
+  if (dt > 0.05) dt = 0.05; // clamp tegen tab-switch spikes
+  update(dt);
+  render();
+  // HUD
+  document.getElementById("time").textContent = "Tijd: " + lapTime.toFixed(2);
+  const best = ghosts.length ? ghosts[0].time.toFixed(2) : "--";
+  document.getElementById("best").textContent = "Beste: " + best;
+  document.getElementById("cp").textContent = "CP: " + nextCp + "/" + checkpoints.length;
+  requestAnimationFrame(loop);
+}
+
+// ---- UI ----
+function buildTrackButtons() {
+  const row = document.getElementById("trackRow");
+  row.innerHTML = "";
+  for (const id in TRACKS) {
+    const b = document.createElement("button");
+    b.textContent = TRACKS[id].name;
+    if (id === trackId) b.classList.add("on");
+    b.onclick = () => selectTrack(id);
+    row.appendChild(b);
+  }
+}
+function selectTrack(id) {
+  trackId = id;
+  loadGhosts();
+  buildTrack();
+  buildTrackButtons();
+  document.getElementById("msg").textContent =
+    `Baan: ${TRACKS[id].name} — ${ghosts.length} ghost(s) geladen.`;
+}
+document.getElementById("coachBtn").onclick = function() {
+  coachMode = !coachMode;
+  this.textContent = "Coach line: " + (coachMode ? "aan" : "uit");
+  this.classList.toggle("on", coachMode);
+};
+document.getElementById("eraseBtn").onclick = () => {
+  if (confirm("Alle ghosts voor deze baan wissen?")) {
+    ghosts = []; runCounter = 0;
+    saveGhosts();
+    document.getElementById("msg").textContent = "Ghosts gewist.";
+  }
+};
+document.getElementById("restartBtn").onclick = () => {
+  resetCar();
+  document.getElementById("msg").textContent = "Klaar voor de start — geef gas!";
+};
+
+// ---- Boot ----
+selectTrack("oval");
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
