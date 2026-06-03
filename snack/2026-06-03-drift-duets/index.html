@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Drift Duets</title>
+<style>
+  :root { --cyan:#22e0e0; --mag:#ff39c0; --bg:#0b0d1a; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:var(--bg); overflow:hidden;
+    font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif; color:#eef; }
+  #wrap { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
+  canvas { background:#0b0d1a; touch-action:none; display:block; max-width:100%; max-height:100%; }
+  .overlay { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; text-align:center; padding:24px; background:rgba(8,10,22,.86);
+    backdrop-filter:blur(3px); z-index:10; }
+  .overlay.hidden { display:none; }
+  h1 { font-size:clamp(28px,7vw,52px); margin:0 0 6px; letter-spacing:2px;
+    background:linear-gradient(90deg,var(--cyan),var(--mag)); -webkit-background-clip:text;
+    background-clip:text; color:transparent; }
+  p { margin:6px 0; font-size:clamp(14px,3.6vw,18px); opacity:.9; max-width:520px; }
+  .keys { display:flex; gap:18px; margin:14px 0; }
+  .key { padding:10px 16px; border-radius:12px; font-weight:700; font-size:18px;
+    border:2px solid; }
+  .kc { color:var(--cyan); border-color:var(--cyan); }
+  .km { color:var(--mag); border-color:var(--mag); }
+  button { margin-top:16px; padding:14px 34px; font-size:18px; font-weight:700; border:none;
+    border-radius:14px; cursor:pointer; color:#08101a;
+    background:linear-gradient(90deg,var(--cyan),var(--mag)); }
+  button:active { transform:scale(.97); }
+  .small { font-size:13px; opacity:.6; margin-top:10px; }
+  .stat { font-size:clamp(20px,5vw,30px); font-weight:800; margin:4px 0; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+
+<div id="start" class="overlay">
+  <h1>DRIFT DUETS</h1>
+  <p>Twee auto's, twee toetsen, één lot. Houd ingedrukt om te <b>driften</b> (draaien), laat los om terug te zwenken. Volg het kronkelende lint &mdash; raakt één auto de rand, dan vallen <b>beide</b>.</p>
+  <div class="keys">
+    <div class="key kc">A &nbsp;=&nbsp; CYAAN (links)</div>
+    <div class="key km">L &nbsp;=&nbsp; MAGENTA (rechts)</div>
+  </div>
+  <p>Druk <b>beide</b> bijna tegelijk (&lt;120ms) tijdens een drift voor een <b>SYNC&nbsp;BOOST</b> + streak-multiplier.</p>
+  <p class="small">Mobiel: tik/houd links en rechts van het scherm. Solo? Bedien beide zelf.</p>
+  <button id="startBtn">START</button>
+  <p class="small">Best: <span id="hiStart">0</span></p>
+</div>
+
+<div id="over" class="overlay hidden">
+  <h1 id="overTitle">CRASH</h1>
+  <p class="stat">Score <span id="finalScore">0</span></p>
+  <p class="stat">Best <span id="hiScore">0</span></p>
+  <p id="overWho" class="small"></p>
+  <button id="restartBtn">OPNIEUW</button>
+</div>
+
+<script>
+"use strict";
+(function () {
+  // ---- config (physics MUST match loseability-test.js) ----
+  var CFG = {
+    STEER: 2.2, COUNTER: 2.2, HMAX: 0.8,
+    V0: 120, V_RAMP: 6, V_MAX: 430,
+    HALF_W: 95, AMP0: 40, AMPR: 50, LEN0: 460, LENR: 360, NW: 3,
+    SYNC_MS: 120
+  };
+  var DPR = Math.min(window.devicePixelRatio || 1, 2);
+  var canvas = document.getElementById("c");
+  var ctx = canvas.getContext("2d");
+  var W = 0, H = 0;
+  function resize() {
+    var vw = Math.min(window.innerWidth, 720);
+    var vh = window.innerHeight;
+    W = vw; H = vh;
+    canvas.style.width = vw + "px"; canvas.style.height = vh + "px";
+    canvas.width = Math.floor(vw * DPR); canvas.height = Math.floor(vh * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  window.addEventListener("resize", resize); resize();
+
+  // ---- seeded RNG ----
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function makeTrack(seed) {
+    var r = mulberry32(seed), w = [];
+    for (var i = 0; i < CFG.NW; i++) w.push({ amp: CFG.AMP0 + r() * CFG.AMPR, len: CFG.LEN0 + r() * CFG.LENR, ph: r() * Math.PI * 2 });
+    return w;
+  }
+  function midX(w, s) { var x = 0; for (var i = 0; i < w.length; i++) x += w[i].amp * Math.sin((s / w[i].len) * Math.PI * 2 + w[i].ph); return x; }
+
+  // ---- storage ----
+  var HI_KEY = "driftduets_hi";
+  function loadHi() { try { var v = parseInt(localStorage.getItem(HI_KEY), 10); return isFinite(v) && v > 0 ? v : 0; } catch (e) { return 0; } }
+  function saveHi(v) { try { localStorage.setItem(HI_KEY, String(v | 0)); } catch (e) {} }
+
+  // ---- state ----
+  var S = null;
+  function newCar(laneX, color) { return { lane: laneX, color: color, s: 0, cx: 0, h: 0, drift: false, lastPress: -1e9, alive: true, trail: [] }; }
+  function reset() {
+    var seed = (Math.floor(Date.now() / 1000) % 100000) + 1; // daily-ish; reproducible per second
+    var tr = makeTrack(seed);
+    var laneGapHalf = W * 0.24;
+    S = {
+      seed: seed, track: tr, t: 0, dist: 0, score: 0,
+      streak: 0, mult: 1, boost: 0, syncFlash: 0, shake: 0,
+      running: true, over: false, who: "",
+      A: newCar(W * 0.5 - laneGapHalf, "var(--cyan)"),
+      L: newCar(W * 0.5 + laneGapHalf, "var(--mag)")
+    };
+    S.A.color = "#22e0e0"; S.L.color = "#ff39c0";
+    S.A.cx = midX(tr, 0); S.L.cx = midX(tr, 0);
+  }
+
+  // ---- input ----
+  function press(car) {
+    if (!S || !S.running) return;
+    car.drift = true;
+    var now = performance.now();
+    car.lastPress = now;
+    // sync detection: both pressed within window while both alive
+    var other = (car === S.A) ? S.L : S.A;
+    if (S.A.alive && S.L.alive && Math.abs(now - other.lastPress) <= CFG.SYNC_MS && S.A.drift && S.L.drift) {
+      S.streak++; S.mult = 1 + S.streak * 0.5; S.boost = 0.55; S.syncFlash = 1;
+    }
+  }
+  function release(car) { if (car) car.drift = false; }
+
+  document.addEventListener("keydown", function (e) {
+    if (e.repeat) return;
+    var k = e.key.toLowerCase();
+    if (k === "a") press(S.A);
+    else if (k === "l") press(S.L);
+  });
+  document.addEventListener("keyup", function (e) {
+    var k = e.key.toLowerCase();
+    if (k === "a") release(S.A);
+    else if (k === "l") release(S.L);
+  });
+
+  // touch zones: left half -> A (cyan, left car), right half -> L (magenta)
+  var activeTouch = {}; // id -> car
+  function carForX(x) { return x < window.innerWidth / 2 ? S.A : S.L; }
+  function onDown(e) {
+    if (!S || !S.running) return;
+    for (var i = 0; i < e.changedTouches.length; i++) {
+      var t = e.changedTouches[i]; var car = carForX(t.clientX);
+      activeTouch[t.identifier] = car; press(car);
+    }
+    e.preventDefault();
+  }
+  function onUp(e) {
+    for (var i = 0; i < e.changedTouches.length; i++) {
+      var t = e.changedTouches[i]; var car = activeTouch[t.identifier];
+      if (car) { release(car); delete activeTouch[t.identifier]; }
+    }
+    e.preventDefault();
+  }
+  canvas.addEventListener("touchstart", onDown, { passive: false });
+  canvas.addEventListener("touchend", onUp, { passive: false });
+  canvas.addEventListener("touchcancel", onUp, { passive: false });
+  // mouse fallback (desktop click-hold)
+  canvas.addEventListener("mousedown", function (e) { if (S && S.running) { var c = carForX(e.clientX); e._c = c; press(c); window._mc = c; } });
+  window.addEventListener("mouseup", function () { if (window._mc) { release(window._mc); window._mc = null; } });
+
+  // ---- update ----
+  function stepCar(car, v, dt) {
+    if (!car.alive) return;
+    if (car.drift) car.h += CFG.STEER * dt; else car.h -= CFG.COUNTER * dt;
+    if (car.h > CFG.HMAX) car.h = CFG.HMAX; if (car.h < -CFG.HMAX) car.h = -CFG.HMAX;
+    car.s += Math.cos(car.h) * v * dt;
+    car.cx += Math.sin(car.h) * v * dt;
+    if (car.s < 0) car.s = 0;
+    var off = car.cx - midX(S.track, car.s);
+    car.trail.push({ s: car.s, off: off });
+    if (car.trail.length > 60) car.trail.shift();
+    if (Math.abs(off) > CFG.HALF_W) { car.alive = false; }
+    car.off = off;
+  }
+
+  function update(dt) {
+    if (!S.running) return;
+    S.t += dt;
+    var baseV = Math.min(CFG.V_MAX, CFG.V0 + CFG.V_RAMP * S.t);
+    var v = baseV * (1 + S.boost);
+    if (S.boost > 0) S.boost = Math.max(0, S.boost - dt * 0.9);
+    if (S.syncFlash > 0) S.syncFlash = Math.max(0, S.syncFlash - dt * 2.5);
+    if (S.shake > 0) S.shake = Math.max(0, S.shake - dt * 4);
+    stepCar(S.A, v, dt);
+    stepCar(S.L, v, dt);
+    S.dist += v * dt;
+    S.score = Math.floor(S.dist / 10 * S.mult);
+    if (!S.A.alive || !S.L.alive) endGame();
+  }
+
+  function endGame() {
+    S.running = false; S.over = true; S.shake = 1;
+    S.who = (!S.A.alive && !S.L.alive) ? "Beide auto's vlogen eraf!" :
+            (!S.A.alive ? "Cyaan (A) raakte de rand." : "Magenta (L) raakte de rand.");
+    var hi = loadHi();
+    if (S.score > hi) { hi = S.score; saveHi(hi); }
+    document.getElementById("finalScore").textContent = S.score;
+    document.getElementById("hiScore").textContent = hi;
+    document.getElementById("overWho").textContent = S.who;
+    document.getElementById("over").classList.remove("hidden");
+  }
+
+  // ---- render ----
+  // The view follows the average forward distance; track scrolls down.
+  function render() {
+    ctx.clearRect(0, 0, W, H);
+    var carY = H * 0.74;                 // cars drawn here
+    var pxPerS = 1.0;                    // world s -> screen px scale (vertical)
+    var avgS = (S.A.s + S.L.s) / 2;
+    var camOff = (S.shake > 0) ? (Math.random() - 0.5) * 10 * S.shake : 0;
+
+    // draw band: sample s from below cars upward
+    function drawLane(car, mirror) {
+      // each car sits in its own copy of the band, centered on its lane base
+      ctx.save();
+      var baseX = car.lane;
+      // ribbon
+      ctx.beginPath();
+      var first = true;
+      var ds = -120;
+      for (var y = -40; y <= H + 40; y += 14) {
+        var sAt = avgS + (carY - y) * pxPerS;
+        var mx = midX(S.track, sAt);
+        var sx = baseX + (mx - midX(S.track, avgS)) + camOff;
+        if (first) { ctx.moveTo(sx - CFG.HALF_W, y); first = false; }
+        else ctx.lineTo(sx - CFG.HALF_W, y);
+      }
+      for (var y2 = H + 40; y2 >= -40; y2 -= 14) {
+        var sAt2 = avgS + (carY - y2) * pxPerS;
+        var mx2 = midX(S.track, sAt2);
+        var sx2 = baseX + (mx2 - midX(S.track, avgS)) + camOff;
+        ctx.lineTo(sx2 + CFG.HALF_W, y2);
+      }
+      ctx.closePath();
+      ctx.fillStyle = "rgba(255,255,255,0.05)";
+      ctx.fill();
+      // edges
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = car.alive ? "rgba(255,255,255,0.35)" : "rgba(255,80,80,0.8)";
+      ctx.beginPath();
+      for (var e = 0; e < 2; e++) {
+        var sign = e === 0 ? -1 : 1; var f2 = true;
+        for (var y3 = -40; y3 <= H + 40; y3 += 14) {
+          var s3 = avgS + (carY - y3) * pxPerS;
+          var x3 = baseX + (midX(S.track, s3) - midX(S.track, avgS)) + sign * CFG.HALF_W + camOff;
+          if (f2) { ctx.moveTo(x3, y3); f2 = false; } else ctx.lineTo(x3, y3);
+        }
+      }
+      ctx.stroke();
+      // center dashed line
+      ctx.setLineDash([8, 12]); ctx.lineWidth = 2; ctx.strokeStyle = car.color + "55";
+      ctx.beginPath(); var f3 = true;
+      for (var y4 = -40; y4 <= H + 40; y4 += 14) {
+        var s4 = avgS + (carY - y4) * pxPerS;
+        var x4 = baseX + (midX(S.track, s4) - midX(S.track, avgS)) + camOff;
+        if (f3) { ctx.moveTo(x4, y4); f3 = false; } else ctx.lineTo(x4, y4);
+      }
+      ctx.stroke(); ctx.setLineDash([]);
+
+      // trail
+      ctx.strokeStyle = car.color + "66"; ctx.lineWidth = 5; ctx.beginPath(); var ft = true;
+      for (var i = 0; i < car.trail.length; i++) {
+        var tp = car.trail[i];
+        var ty = carY - (tp.s - avgS) / pxPerS;
+        var tx = baseX + (midX(S.track, tp.s) - midX(S.track, avgS)) + tp.off + camOff;
+        if (ft) { ctx.moveTo(tx, ty); ft = false; } else ctx.lineTo(tx, ty);
+      }
+      ctx.stroke();
+
+      // car
+      var cxScreen = baseX + car.off + camOff;
+      ctx.save();
+      ctx.translate(cxScreen, carY);
+      ctx.rotate(car.h);
+      if (S.boost > 0.05 && car.alive) {
+        ctx.fillStyle = "rgba(255,255,160,0.7)";
+        ctx.fillRect(-6, 16, 12, 12 + S.boost * 30);
+      }
+      ctx.fillStyle = car.alive ? car.color : "#888";
+      ctx.shadowColor = car.color; ctx.shadowBlur = car.alive ? 16 : 0;
+      ctx.fillRect(-13, -20, 26, 40);
+      ctx.shadowBlur = 0; ctx.fillStyle = "#0b0d1a";
+      ctx.fillRect(-9, -12, 18, 12);
+      ctx.restore();
+
+      // key label
+      ctx.fillStyle = car.color; ctx.font = "bold 22px system-ui"; ctx.textAlign = "center";
+      ctx.fillText(mirror, baseX + camOff, H - 18);
+      ctx.restore();
+    }
+    drawLane(S.A, "A");
+    drawLane(S.L, "L");
+
+    // HUD
+    ctx.textAlign = "left"; ctx.fillStyle = "#eef"; ctx.font = "bold 26px system-ui";
+    ctx.fillText(String(S.score), 16, 36);
+    ctx.font = "13px system-ui"; ctx.fillStyle = "#9af";
+    ctx.fillText("SCORE", 16, 52);
+    ctx.textAlign = "right"; ctx.fillStyle = S.mult > 1 ? "#ffec6b" : "#789";
+    ctx.font = "bold 22px system-ui";
+    ctx.fillText("x" + S.mult.toFixed(1) + (S.streak > 0 ? "  streak " + S.streak : ""), W - 16, 36);
+
+    if (S.syncFlash > 0) {
+      ctx.globalAlpha = S.syncFlash; ctx.fillStyle = "#ffec6b";
+      ctx.textAlign = "center"; ctx.font = "bold 34px system-ui";
+      ctx.fillText("SYNC BOOST!", W / 2, H * 0.4); ctx.globalAlpha = 1;
+    }
+  }
+
+  // ---- loop (rAF, delta-time, update/render split) ----
+  var last = 0, acc = 0, FIXED = 1 / 60;
+  function frame(ts) {
+    if (!last) last = ts;
+    var dt = (ts - last) / 1000; last = ts;
+    if (dt > 0.1) dt = 0.1; // tab-switch clamp
+    if (S && S.running) {
+      acc += dt;
+      while (acc >= FIXED) { update(FIXED); acc -= FIXED; if (!S.running) break; }
+    }
+    if (S) render();
+    requestAnimationFrame(frame);
+  }
+
+  // ---- UI wiring ----
+  function startGame() {
+    reset();
+    document.getElementById("start").classList.add("hidden");
+    document.getElementById("over").classList.add("hidden");
+    last = 0; acc = 0;
+  }
+  document.getElementById("startBtn").addEventListener("click", startGame);
+  document.getElementById("restartBtn").addEventListener("click", startGame);
+  document.getElementById("hiStart").textContent = loadHi();
+
+  reset(); S.running = false; // show first frame static
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

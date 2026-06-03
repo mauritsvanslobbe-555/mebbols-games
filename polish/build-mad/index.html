@@ -1,0 +1,3518 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Build Mad — Mebbols Games</title>
+<meta name="description" content="Build Mad: bekijk de baan, bouw het perfecte voertuig op een grid en rij naar de finish. 10 physics-puzzellevels, gratis te spelen op Mebbols.">
+<meta property="og:title" content="Build Mad — Mebbols Games">
+<meta property="og:description" content="Bouw je voertuig, rij de baan, build beter. 10 levels physics-puzzel-actie.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://mebbols.com/games/build-mad/">
+<meta name="theme-color" content="#3a2e2a">
+<!--
+  Build Mad — FASE 3 (Art Pass)
+  Single-file index.html. Cartoon-junkyard art-stijl (art-bible v1.0).
+
+  Matter.js-integratie: CDN via cdnjs (https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0).
+
+  FASE 3 (art pass) — gameplay-code (physics, levels, state-machine, input,
+  build/drive/result-flow) is ONGEMOEID gebleven. Alleen render + UI vervangen:
+  - Volledig junkyard-palet als CSS-vars (basis + afgeleide tinten, art-bible §2).
+  - Fonts Bungee + Nunito via Google-Fonts <link> (zie keuze-noot hieronder).
+  - drawPart(): centrale onderdeel-render, 10 onderdelen, off-screen pre-render.
+  - Achtergrond: sky-gradient + 2 parallax-lagen + tileable ground-pattern.
+  - UI-kit: drawButton-states, build-grid cel-states (✓/✕), budget-meter, sterren.
+  - Title-screen logo-treatment + title-truck via drawPart.
+
+  FONT-KEUZE (art-bible §3.2): de art-bible vraagt base64-WOFF2-embed voor
+  offline-werking. Bungee + Nunito base64 zou ~60-90KB aan het bestand toevoegen
+  en is niet praktisch zonder asset-pipeline. Omdat het spel sowieso Matter.js
+  van een CDN laadt (al een externe request), is een Google-Fonts <link> met een
+  degelijke fallback-stack pragmatischer en consistent. Fallback-stacks dekken
+  offline-gebruik (--font-display / --font-body).
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Nunito:wght@700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* Basispalet — art-bible §2.1 */
+    --bg-sky:#3a2e2a; --bg-mid:#5a4a42; --ground:#6b4a2c; --ground-accent:#4a2f18;
+    --mud:#3d2510; --part:#d4a747; --accent:#ffce4b; --warn:#c8332a; --white:#f4ecd8;
+    /* Afgeleide tinten — art-bible §2.2 */
+    --ink:#241a14; --ink-soft:rgba(36,26,20,0.45);
+    --part-shadow:#a87f2e; --part-light:#e8c777;
+    --accent-shadow:#d9a72f; --accent-light:#fff0a8;
+    --ground-shadow:#4a3219; --ground-light:#85603a;
+    --warn-shadow:#9a261f; --warn-light:#e0584e;
+    --panel-dark:#2a211e; --panel-darker:#1d1714;
+    --valid-green:#5cbf5a; --invalid-red:#c8332a;
+    --disabled-grey:#6e655c; --disabled-ink:#4a443d;
+    --metal-tyre:#2c2622; --metal-tyre-light:#46403a; --hub:#c9c2b4;
+    /* Typografie — art-bible §3.3 */
+    --font-display:'Bungee','Arial Black','Impact',sans-serif;
+    --font-body:'Nunito','Segoe UI','Helvetica Neue',Arial,sans-serif;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+  html,body { width:100%; height:100%; overflow:hidden; background:var(--bg-sky);
+    font-family:var(--font-body); color:var(--white);
+    -webkit-user-select:none; user-select:none; touch-action:none; }
+  #game { position:relative; width:100%; height:100%; }
+  canvas#cv { display:block; width:100%; height:100%; background:var(--bg-sky); }
+
+  .screen { position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:14px; }
+  .hidden { display:none !important; }
+
+  /* Title-screen: logo + truck op een schroot-richel */
+  #titleScreen { gap:10px; }
+  #titleScreen h1 { font-family:var(--font-display); font-weight:400;
+    font-size:clamp(40px,12vw,84px); color:var(--accent); letter-spacing:2px;
+    line-height:.92; text-align:center;
+    text-shadow:7px 7px 0 var(--warn), -2px -2px 0 var(--ink),
+      2px -2px 0 var(--ink), -2px 2px 0 var(--ink), 2px 2px 0 var(--ink),
+      0 4px 0 var(--ink), 4px 0 0 var(--ink); }
+  #titleScreen h1 .mad { display:inline-block; font-size:1.28em;
+    transform:rotate(-6deg); }
+  #titleCanvas { width:min(420px,82vw); height:170px; }
+  .sub { color:var(--white); opacity:.78; font-size:13px; font-weight:700;
+    text-align:center; }
+
+  /* Knoppen — art-bible §5.1 (HTML-variant van de drawButton-look) */
+  button { font-family:var(--font-display); font-weight:400; cursor:pointer;
+    color:var(--ink); background:var(--part); border:4px solid var(--ink);
+    border-radius:8px; box-shadow:0 4px 0 var(--part-shadow);
+    transition:transform .06s, box-shadow .06s, background .08s;
+    letter-spacing:.5px; text-transform:uppercase; }
+  button:hover:not(:disabled) { background:var(--accent);
+    box-shadow:0 4px 0 var(--accent-shadow); }
+  button:active:not(:disabled) { transform:translateY(3px);
+    box-shadow:0 1px 0 var(--part-shadow); }
+  button:disabled { background:var(--disabled-grey); color:#9a9286;
+    border-color:var(--disabled-ink); box-shadow:0 4px 0 var(--disabled-ink);
+    cursor:not-allowed; }
+  /* primaire CTA krijgt fellere accent-fill */
+  button.cta { background:var(--accent); box-shadow:0 4px 0 var(--accent-shadow); }
+  button.cta:hover:not(:disabled) { background:var(--accent-light); }
+  .btn-big { font-size:22px; padding:14px 36px; }
+  .btn-mid { font-size:15px; padding:11px 22px; }
+  .btn-sm  { font-size:12px; padding:8px 13px; }
+
+  /* button color-flash bij klik (fase 4 juice) */
+  button.flash { background:var(--accent-light) !important;
+    box-shadow:0 4px 0 var(--accent-shadow),0 0 12px 3px rgba(255,240,168,.7) !important; }
+
+  /* CTA-puls (art-bible §9 logo/CTA) */
+  @keyframes ctaPulse { 0%,100%{box-shadow:0 4px 0 var(--accent-shadow),0 0 0 0 rgba(255,240,168,0);}
+    50%{box-shadow:0 4px 0 var(--accent-shadow),0 0 14px 4px rgba(255,240,168,.55);} }
+  button.cta.pulse { animation:ctaPulse 1.6s ease-in-out infinite; }
+
+  /* Level select */
+  #levelSelectScreen { justify-content:flex-start; padding-top:24px; gap:10px; }
+  #levelSelectScreen h1 { font-family:var(--font-display); font-weight:400;
+    color:var(--white); letter-spacing:1px; text-transform:uppercase; }
+  #levelGrid { display:grid; grid-template-columns:repeat(5,128px); gap:14px;
+    max-width:96vw; }
+  @media (max-width:719px) {
+    #levelGrid { grid-template-columns:repeat(2,140px); }
+  }
+  .levelCard { background:var(--panel-dark); border-radius:10px; padding:10px;
+    text-align:center; cursor:pointer; border:3px solid var(--ink);
+    box-shadow:0 4px 0 var(--panel-darker);
+    display:flex; flex-direction:column; align-items:center; gap:4px; }
+  .levelCard:hover { border-color:var(--accent); }
+  .levelCard.locked { opacity:.55; cursor:not-allowed; }
+  .levelCard.locked:hover { border-color:var(--ink); }
+  .levelCard .num { font-family:var(--font-display); font-weight:400;
+    font-size:15px; color:var(--accent); letter-spacing:.5px; }
+  .levelCard .nm { font-size:10px; font-weight:700; opacity:.88; min-height:24px;
+    line-height:1.15; }
+  .levelCard .st { font-size:13px; color:var(--accent); letter-spacing:1px; }
+  .levelCard canvas.thumb { width:108px; height:42px; background:var(--panel-darker);
+    border-radius:4px; }
+  .levelCard .lock { font-size:26px; }
+  #lvlTotalStars { font-size:14px; font-weight:800; opacity:.95; }
+
+  /* HUD / overlays */
+  .topbar { position:absolute; top:0; left:0; right:0; height:42px; display:flex;
+    align-items:center; justify-content:space-between; padding:0 12px;
+    background:rgba(42,33,30,.94); border-bottom:2px solid var(--ink);
+    font-size:13px; font-weight:800; z-index:5; }
+  .topbar .seg { display:flex; gap:8px; align-items:center; }
+  #buildLevelName { font-family:var(--font-display); font-weight:400;
+    font-size:15px; letter-spacing:.5px; }
+  #driveTimer,#drivePar { font-weight:800; font-variant-numeric:tabular-nums; }
+
+  /* Build sidebar */
+  #buildUI { position:absolute; inset:0; pointer-events:none; }
+  #partBin { position:absolute; pointer-events:auto; background:rgba(29,23,20,.96);
+    display:flex; gap:6px; z-index:4; }
+  .partChip { background:var(--panel-darker); border-radius:6px; padding:6px 8px;
+    font-size:11px; font-weight:700; text-align:center; cursor:grab;
+    border:2px solid var(--ink-soft); min-width:74px; flex:0 0 auto;
+    position:relative; }
+  .partChip.locked { opacity:.4; cursor:not-allowed; }
+  .partChip.unaffordable { opacity:.45; }
+  .partChip canvas.sw { width:40px; height:40px; margin:2px auto; display:block; }
+  .partChip .cost { position:absolute; top:-7px; right:-7px; width:22px; height:22px;
+    line-height:22px; border-radius:50%; background:var(--accent); color:var(--ink);
+    font-weight:800; font-size:11px; border:2px solid var(--ink); }
+  .partChip.unaffordable .cost { background:var(--warn); color:var(--white); }
+  .partChip .lk { font-size:10px; color:var(--warn); font-weight:800; }
+  .partChip.sel { border-color:var(--accent); }
+
+  /* desktop: sidebar right */
+  @media (min-width:720px) {
+    #partBin { top:42px; right:0; bottom:0; width:180px; flex-direction:column;
+      overflow-y:auto; padding:10px; }
+  }
+  /* mobile: bottom strip */
+  @media (max-width:719px) {
+    #partBin { left:0; right:0; bottom:96px; height:84px; flex-direction:row;
+      overflow-x:auto; padding:8px; align-items:center; }
+  }
+
+  #buildBudget { position:absolute; top:50px; left:12px; pointer-events:auto;
+    background:rgba(29,23,20,.94); padding:8px 12px; border-radius:8px;
+    border:2px solid var(--ink); font-size:13px; font-weight:800;
+    display:flex; flex-direction:column; gap:5px; }
+  #buildBudgetBar { width:170px; height:14px; background:var(--panel-darker);
+    border:2px solid var(--ink); border-radius:9px; overflow:hidden;
+    position:relative; }
+  #buildBudgetFill { height:100%; background:var(--accent); width:0%;
+    transition:width .15s; }
+  #buildBudgetMark { position:absolute; top:0; bottom:0; left:50%; width:2px;
+    background:var(--white); opacity:.7; }
+  #buildBudget.lean #buildBudgetFill { background:var(--valid-green); }
+  #buildBudget.over #buildBudgetFill { background:var(--warn);
+    animation:overBlink .6s ease-in-out infinite; }
+  #buildBudget.over #buildBudgetText { color:var(--warn-light); }
+  @keyframes overBlink { 0%,100%{opacity:1;} 50%{opacity:.55;} }
+  #buildLeanTag { color:var(--valid-green); font-size:10px; font-weight:800; }
+  #buildHint { position:absolute; bottom:10px; left:50%; transform:translateX(-50%);
+    pointer-events:auto; display:flex; gap:10px; }
+
+  /* drive touch buttons */
+  #driveTouch { position:absolute; bottom:0; left:0; right:0; height:96px;
+    display:flex; justify-content:space-between; padding:8px 14px; pointer-events:none; }
+  #driveTouch button { width:96px; height:80px; font-size:17px; pointer-events:auto;
+    opacity:.92; }
+
+  /* result modal — art-bible §5.2 */
+  #resultModal .card { background:var(--panel-dark); border-radius:12px;
+    padding:0 0 22px; text-align:center; display:flex; flex-direction:column;
+    gap:12px; border:4px solid var(--ink); min-width:320px;
+    box-shadow:6px 6px 0 var(--panel-darker); overflow:hidden;
+    animation:modalIn .2s cubic-bezier(.34,1.56,.64,1); }
+  @keyframes modalIn { from{transform:scale(.85);} to{transform:scale(1);} }
+  #resTitle { font-family:var(--font-display); font-weight:400; font-size:24px;
+    color:var(--ink); background:var(--part); padding:11px 34px;
+    border-bottom:3px solid var(--ink); text-transform:uppercase;
+    letter-spacing:.5px; }
+  #resStars { min-height:54px; padding:0 34px; }
+  #resStars canvas { display:block; margin:0 auto; }
+  #resInfo { font-size:13px; font-weight:700; opacity:.88; padding:0 34px; }
+  #resUnlock { font-size:13px; font-weight:800; color:var(--accent);
+    min-height:18px; padding:0 34px; }
+  .modalBtns { display:flex; gap:10px; justify-content:center; flex-wrap:wrap;
+    padding:4px 24px 0; }
+
+  .driveHint { position:absolute; top:54px; left:50%; transform:translateX(-50%);
+    background:rgba(29,23,20,.7); border:2px solid var(--ink);
+    padding:6px 14px; border-radius:6px; font-size:12px; font-weight:700; }
+
+  /* ===== FASE 6 — title polish, achievements, share, toast ===== */
+  @keyframes logoWobble { 0%,100%{transform:rotate(-1.2deg);} 50%{transform:rotate(1.2deg);} }
+  #titleScreen h1 { animation:logoWobble 3.6s ease-in-out infinite; }
+  .titleBtns { display:flex; flex-direction:column; align-items:center; gap:9px; }
+  .titleRow { display:flex; gap:9px; flex-wrap:wrap; justify-content:center; }
+  .tagline { color:var(--white); opacity:.82; font-size:13px; font-weight:700;
+    text-align:center; max-width:340px; line-height:1.35; }
+  #achievementsScreen { justify-content:flex-start; padding-top:24px; gap:12px;
+    overflow-y:auto; }
+  #achievementsScreen h1 { font-family:var(--font-display); font-weight:400;
+    color:var(--white); letter-spacing:1px; text-transform:uppercase; font-size:30px; }
+  #achList { display:flex; flex-direction:column; gap:8px; width:min(440px,92vw);
+    padding-bottom:10px; }
+  .achCard { display:flex; align-items:center; gap:12px; text-align:left;
+    background:var(--panel-dark); border:3px solid var(--ink); border-radius:10px;
+    padding:9px 12px; box-shadow:0 4px 0 var(--panel-darker); }
+  .achCard.locked { opacity:.5; }
+  .achCard .icon { font-size:28px; width:38px; text-align:center; flex:0 0 auto; }
+  .achCard.locked .icon { filter:grayscale(1); }
+  .achCard .body { flex:1 1 auto; }
+  .achCard .title { font-family:var(--font-display); font-weight:400; font-size:13px;
+    color:var(--accent); letter-spacing:.4px; }
+  .achCard.locked .title { color:var(--white); }
+  .achCard .desc { font-size:11px; font-weight:700; opacity:.85; line-height:1.25;
+    margin-top:2px; }
+  .achCard .badge { font-size:18px; flex:0 0 auto; }
+  #achProgress { font-size:13px; font-weight:800; opacity:.95; }
+  #toastWrap { position:absolute; top:50px; right:12px; z-index:30;
+    display:flex; flex-direction:column; gap:8px; pointer-events:none;
+    max-width:min(300px,80vw); }
+  .toast { background:var(--panel-dark); border:3px solid var(--accent);
+    border-radius:10px; padding:9px 12px; box-shadow:0 4px 0 var(--panel-darker);
+    display:flex; align-items:center; gap:10px;
+    animation:toastIn .3s cubic-bezier(.34,1.56,.64,1); }
+  .toast .ti { font-size:24px; }
+  .toast .tt { font-family:var(--font-display); font-weight:400; font-size:11px;
+    color:var(--accent); letter-spacing:.3px; }
+  .toast .td { font-size:11px; font-weight:700; opacity:.88; margin-top:1px; }
+  .toast.out { animation:toastOut .35s ease-in forwards; }
+  @keyframes toastIn { from{transform:translateX(120%);opacity:0;} to{transform:translateX(0);opacity:1;} }
+  @keyframes toastOut { from{transform:translateX(0);opacity:1;} to{transform:translateX(120%);opacity:0;} }
+  .shareNote { font-size:12px; font-weight:800; color:var(--valid-green);
+    min-height:16px; text-align:center; }
+</style>
+
+</head>
+<body>
+<div id="game">
+  <canvas id="cv"></canvas>
+
+  <!-- TITLE -->
+  <div id="titleScreen" class="screen">
+    <h1>BUILD<br><span class="mad">MAD</span></h1>
+    <canvas id="titleCanvas" width="840" height="340"></canvas>
+    <p class="tagline">Je ziet de baan eerst &mdash; bouw dan h&eacute;t voertuig dat hier wint. Sleep, geef gas, en kijk of je plan klopt.</p>
+    <div class="titleBtns">
+      <button class="btn-big cta pulse" id="btnPlay">&#9654; Speel</button>
+      <div class="titleRow">
+        <button class="btn-mid" id="btnLevels">&#127942; Levels</button>
+        <button class="btn-mid" id="btnAchievements">&#127941; Prestaties</button>
+      </div>
+      <div class="titleRow">
+        <button class="btn-sm" id="btnShareTitle">&#128279; Deel</button>
+        <button class="btn-sm" id="btnMuteTitle">&#128266; Geluid: aan</button>
+      </div>
+      <p class="shareNote" id="titleShareNote"></p>
+    </div>
+    <p class="sub">Mebbols Games &middot; 10 levels</p>
+  </div>
+
+  <!-- LEVEL SELECT -->
+  <div id="levelSelectScreen" class="screen hidden">
+    <h1 style="font-size:32px;">Kies een level</h1>
+    <div id="lvlTotalStars">&#11088; 0 / 30</div>
+    <div id="levelGrid"></div>
+    <div class="titleRow">
+      <button class="btn-mid" id="btnBackTitle">&larr; Terug</button>
+      <button class="btn-mid" id="btnLvlAchievements">&#127941; Prestaties</button>
+    </div>
+  </div>
+
+  <!-- ACHIEVEMENTS -->
+  <div id="achievementsScreen" class="screen hidden">
+    <h1>&#127941; Prestaties</h1>
+    <div id="achProgress">0 / 0 ontgrendeld</div>
+    <div id="achList"></div>
+    <button class="btn-mid" id="btnAchBack">&larr; Terug</button>
+  </div>
+
+  <!-- BUILD -->
+  <div id="buildScreen" class="screen hidden" style="justify-content:flex-start;">
+    <div class="topbar">
+      <div class="seg"><button class="btn-sm" id="btnBuildBack">&larr; Levels</button>
+        <span id="buildLevelName">Level</span></div>
+      <div class="seg"><span id="buildValidMsg" style="color:var(--warn);"></span>
+        <button class="btn-sm" id="btnMuteBuild">&#128266;</button></div>
+    </div>
+    <div id="buildUI">
+      <div id="buildBudget">
+        <span id="buildBudgetText">BUDGET: 0 / 0</span>
+        <div id="buildBudgetBar">
+          <div id="buildBudgetFill"></div>
+          <div id="buildBudgetMark"></div>
+        </div>
+        <span id="buildLeanTag"></span>
+      </div>
+      <div id="partBin"></div>
+      <div id="buildHint">
+        <button class="btn-sm" id="btnBuildReset">&#128465; Wis</button>
+        <button class="btn-big" id="btnStart">&#9654; START</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- DRIVE -->
+  <div id="driveScreen" class="screen hidden" style="justify-content:flex-start;">
+    <div class="topbar">
+      <div class="seg"><span id="driveTimer">&#9201; 0.0s</span>
+        <span id="drivePar">&#127919; Par 0s</span></div>
+      <div class="seg"><button class="btn-sm" id="btnMuteDrive">&#128266;</button>
+        <button class="btn-sm" id="btnDriveRestart">&#128260; R</button>
+        <button class="btn-sm" id="btnDriveExit">&#10073;&#10073; ESC</button></div>
+    </div>
+    <div class="driveHint" id="driveHint">&larr; rem &nbsp; &nbsp; gas &rarr;</div>
+    <div id="driveTouch">
+      <button id="btnBrake">&#9664; REM</button>
+      <button id="btnGas">GAS &#9654;</button>
+    </div>
+  </div>
+
+  <!-- RESULT -->
+  <div id="resultModal" class="screen hidden" style="background:rgba(0,0,0,.55);">
+    <div class="card">
+      <div id="resTitle">Finish!</div>
+      <div id="resStars"><canvas id="resStarsCanvas" width="320" height="108"></canvas></div>
+      <div id="resInfo"></div>
+      <div id="resUnlock"></div>
+      <div class="modalBtns">
+        <button class="btn-mid" id="btnRetry">&#8635; Nogmaals</button>
+        <button class="btn-mid" id="btnNext">Volgend &rarr;</button>
+        <button class="btn-mid" id="btnToLevels">Levels</button>
+      </div>
+      <div class="modalBtns">
+        <button class="btn-sm" id="btnShareResult">&#128279; Deel je score</button>
+      </div>
+      <p class="shareNote" id="resShareNote"></p>
+    </div>
+  </div>
+
+  <!-- TOASTS (achievement-unlocks) -->
+  <div id="toastWrap"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+<script>
+"use strict";
+/* ============================================================
+   Build Mad — Fase 2 (level / content)
+   ============================================================ */
+
+const { Engine, World, Bodies, Body, Composite, Constraint, Vector } = Matter;
+
+/* ---------- Onderdelen-data (GDD §4, 10 parts) ---------- */
+// massa hier = density-proxy; physics gebruikt density-veld.
+// 'unlock' = level-id waarop dit onderdeel beschikbaar komt.
+const PARTS = [
+  { id:'chassis',   name:'Chassis-cel', gw:1, gh:1, cost:2,  color:'#d4a747',
+    role:'chassis',  density:0.0020, friction:0.4, unlock:1 },
+  { id:'smallWheel',name:'Klein wiel',  gw:1, gh:1, cost:4,  color:'#2c2c2c',
+    role:'wheel',    density:0.0030, friction:0.9,  radius:14, unlock:1 },
+  { id:'bigWheel',  name:'Groot wiel',  gw:2, gh:2, cost:8,  color:'#1c1c1c',
+    role:'wheel',    density:0.0035, friction:1.1,  radius:30, unlock:2 },
+  { id:'track',     name:'Rups-wiel',   gw:2, gh:1, cost:12, color:'#3a3a3a',
+    role:'wheel',    density:0.0045, friction:1.4,  radius:18, unlock:4 },
+  { id:'motorBasic',name:'Motor basis', gw:1, gh:1, cost:5,  color:'#5fa8d4',
+    role:'motor',    density:0.0020, friction:0.4,  torque:0.0020, unlock:1 },
+  // Fase-5 balancing (BUG-2): turbo was strikt beter dan basis (2.40x torque
+  // voor 2.0x kosten). Nu een echte trade-off: torque 0.0034 (1.7x voor 2.0x
+  // kosten -> alleen efficient bij ruim budget) en density fors hoger (0.0040)
+  // zodat de motor het voertuig topzwaar maakt — kantel-risico is reeel, niet
+  // volledig weg te plaatsen.
+  { id:'motorTurbo',name:'Motor turbo', gw:1, gh:1, cost:10, color:'#8f6fd4',
+    role:'motor',    density:0.0040, friction:0.4,  torque:0.0034, unlock:5 },
+  { id:'weight',    name:'Gewicht',     gw:1, gh:1, cost:3,  color:'#888888',
+    role:'weight',   density:0.0090, friction:0.3, unlock:2 },
+  { id:'balloon',   name:'Ballon',      gw:1, gh:1, cost:6,  color:'#d46f8f',
+    role:'balloon',  density:0.0008, friction:0.2,  lift:0.0009, unlock:3 },
+  { id:'bumper',    name:'Bumper',      gw:2, gh:1, cost:5,  color:'#c8332a',
+    role:'bumper',   density:0.0018, friction:0.6,  restitution:0.9, unlock:3 },
+  { id:'spike',     name:'Spike-plaat', gw:1, gh:1, cost:4,  color:'#9ab0c0',
+    role:'spike',    density:0.0022, friction:1.6, unlock:6 },
+];
+const PART_BY_ID = Object.fromEntries(PARTS.map(p => [p.id, p]));
+
+/* ============================================================
+   LEVEL-DATA — GDD §6, alle 10 levels (data los van engine-code)
+   ============================================================ */
+// obstacles in WERELD-coords; ground op GROUND_Y. Het veld 'unlocks'
+// bevat de part-id's die vrijkomen bij voltooien van dit level.
+// Obstakel-types: flat(x,w) bump(x,h) gap(x,w) mud(x,w) ramp(x,angle)
+//                 seesaw(x,len) stack(x,count) spinner(x).
+const LEVELS = [
+  { id:1, name:'Schroothoop Start', length:800, parTime:15, budgetMax:30,
+    threeStarBudget:10, threeStarTime:null,
+    obstacles:[
+      { type:'flat', x:0,   w:400 },
+      { type:'bump', x:400, h:30 },
+      { type:'flat', x:480, w:320 },
+    ],
+    unlocks:['chassis','smallWheel','motorBasic'] },
+
+  { id:2, name:'Modderbad', length:1000, parTime:20, budgetMax:40,
+    threeStarBudget:16, threeStarTime:null,
+    obstacles:[
+      { type:'flat', x:0,   w:260 },
+      { type:'mud',  x:260, w:200 },
+      { type:'flat', x:460, w:140 },
+      { type:'mud',  x:600, w:200 },
+      { type:'flat', x:800, w:200 },
+    ],
+    unlocks:['bigWheel','weight'] },
+
+  { id:3, name:'Het Eerste Gat', length:1100, parTime:20, budgetMax:45,
+    threeStarBudget:18, threeStarTime:null,
+    obstacles:[
+      { type:'flat', x:0,   w:480 },
+      { type:'gap',  x:480, w:120 },
+      { type:'flat', x:600, w:500 },
+    ],
+    unlocks:['balloon','bumper'] },
+
+  { id:4, name:'Wip-tafel', length:1200, parTime:25, budgetMax:50,
+    threeStarBudget:20, threeStarTime:null,
+    obstacles:[
+      { type:'flat',   x:0,   w:440 },
+      { type:'seesaw', x:440, len:240 },
+      { type:'flat',   x:680, w:520 },
+    ],
+    unlocks:['track'] },
+
+  { id:5, name:'Stuiterstad', length:1300, parTime:24, budgetMax:55,
+    threeStarBudget:22, threeStarTime:null,
+    obstacles:[
+      { type:'flat',  x:0,   w:320 },
+      { type:'stack', x:340, count:5 },
+      { type:'flat',  x:440, w:160 },
+      { type:'stack', x:620, count:5 },
+      { type:'flat',  x:720, w:160 },
+      { type:'stack', x:900, count:5 },
+      { type:'flat',  x:1000, w:300 },
+    ],
+    unlocks:['motorTurbo'] },
+
+  { id:6, name:'Heuvel-marathon', length:1400, parTime:28, budgetMax:60,
+    threeStarBudget:null, threeStarTime:22,
+    obstacles:[
+      { type:'flat', x:0,    w:260 },
+      { type:'bump', x:260,  h:24 },
+      { type:'flat', x:340,  w:160 },
+      { type:'bump', x:500,  h:38 },
+      { type:'flat', x:580,  w:160 },
+      { type:'bump', x:740,  h:52 },
+      { type:'flat', x:820,  w:160 },
+      { type:'bump', x:980,  h:66 },
+      { type:'flat', x:1060, w:340 },
+    ],
+    unlocks:['spike'] },
+
+  { id:7, name:'Modder & Gat', length:1400, parTime:28, budgetMax:60,
+    threeStarBudget:24, threeStarTime:null,
+    obstacles:[
+      { type:'flat', x:0,    w:340 },
+      { type:'mud',  x:340,  w:280 },
+      { type:'flat', x:620,  w:200 },
+      { type:'gap',  x:820,  w:160 },
+      { type:'flat', x:980,  w:420 },
+    ],
+    unlocks:[] },
+
+  { id:8, name:'Wapperende Wip', length:1500, parTime:32, budgetMax:65,
+    threeStarBudget:26, threeStarTime:null,
+    obstacles:[
+      { type:'flat',   x:0,    w:360 },
+      { type:'seesaw', x:360,  len:240 },
+      { type:'flat',   x:600,  w:160 },
+      { type:'bump',   x:760,  h:44 },
+      { type:'flat',   x:840,  w:140 },
+      { type:'gap',    x:980,  w:140 },
+      { type:'flat',   x:1120, w:380 },
+    ],
+    unlocks:[] },
+
+  { id:9, name:'Spinner Alley', length:1600, parTime:30, budgetMax:70,
+    threeStarBudget:null, threeStarTime:21,
+    obstacles:[
+      { type:'flat',    x:0,    w:420 },
+      { type:'spinner', x:420 },
+      { type:'flat',    x:520,  w:340 },
+      { type:'spinner', x:860 },
+      { type:'flat',    x:960,  w:640 },
+    ],
+    unlocks:[] },
+
+  { id:10, name:'Schroot-finale', length:1800, parTime:45, budgetMax:80,
+    threeStarBudget:34, threeStarTime:null,
+    obstacles:[
+      { type:'flat',    x:0,    w:300 },
+      { type:'mud',     x:300,  w:240 },
+      { type:'flat',    x:540,  w:140 },
+      { type:'seesaw',  x:680,  len:240 },
+      { type:'flat',    x:920,  w:140 },
+      { type:'stack',   x:1080, count:5 },
+      { type:'flat',    x:1180, w:120 },
+      { type:'gap',     x:1300, w:150 },
+      { type:'flat',    x:1450, w:120 },
+      { type:'spinner', x:1570 },
+      { type:'flat',    x:1670, w:230 },
+    ],
+    unlocks:[] },
+];
+
+/* ---------- Globale gameState ---------- */
+const STATES = ['title','levelSelect','build','drive','result','achievements'];
+const gameState = {
+  state:'title',
+  levelIndex:0,
+  // build: grid van geplaatste parts. Cell 32px, grid 10x6.
+  grid:{ cols:10, rows:6, cell:32 },
+  placed:[],            // {partId, gx, gy}  gx/gy = top-left cel
+  budgetUsed:0,
+  // drive
+  vehicle:null,         // { composite, chassisBodies, wheels:[{body,part}], motors, balloons:[], parts:[] }
+  camera:{ x:0, y:0 },
+  cameraTarget:{ x:0, y:0 },
+  input:{ gas:false, brake:false },
+  timer:0,
+  crashTimer:0,
+  finished:false,
+  driveAttempt:0,       // FASE 6: rit-pogingen sinds laatste build (1 = eerste rit)
+  // result
+  result:null,          // { stars, time, crashed, outcome:'finish'|'crash'|'timeout', unlocked:[] }
+  // progress
+  progress:{ levelStars:{}, totalStars:0 },
+  unlockedParts:new Set(),
+  spinners:[],          // kinematic spinner-bodies, krijgen angular velocity
+  seesaws:[],           // seesaw-balken
+};
+
+/* ---------- Canvas / viewport ---------- */
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let VW = 0, VH = 0, DPR = 1;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  VW = window.innerWidth; VH = window.innerHeight;
+  cv.width = VW * DPR; cv.height = VH * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+/* ============================================================
+   ART-PASS (FASE 3) — palet, helpers, polyfill
+   ============================================================ */
+// roundRect-polyfill — Safari 15 mist deze (art-bible §12 setup).
+if (typeof CanvasRenderingContext2D !== 'undefined' &&
+    !CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    if (typeof r === 'number') r = [r, r, r, r];
+    else if (r.length === 1) r = [r[0], r[0], r[0], r[0]];
+    const [tl, tr, br, bl] = r;
+    this.moveTo(x + tl, y);
+    this.lineTo(x + w - tr, y);
+    this.arcTo(x + w, y, x + w, y + tr, tr);
+    this.lineTo(x + w, y + h - br);
+    this.arcTo(x + w, y + h, x + w - br, y + h, br);
+    this.lineTo(x + bl, y + h);
+    this.arcTo(x, y + h, x, y + h - bl, bl);
+    this.lineTo(x, y + tl);
+    this.arcTo(x, y, x + tl, y, tl);
+    return this;
+  };
+}
+
+// Junkyard-palet — art-bible §2. Eén bron van waarheid in JS naast de CSS-vars.
+const PAL = {
+  bgSky:'#3a2e2a', bgMid:'#5a4a42', ground:'#6b4a2c', groundAccent:'#4a2f18',
+  mud:'#3d2510', part:'#d4a747', accent:'#ffce4b', warn:'#c8332a', white:'#f4ecd8',
+  ink:'#241a14', inkSoft:'rgba(36,26,20,0.45)',
+  partShadow:'#a87f2e', partLight:'#e8c777',
+  accentShadow:'#d9a72f', accentLight:'#fff0a8',
+  groundShadow:'#4a3219', groundLight:'#85603a',
+  warnShadow:'#9a261f', warnLight:'#e0584e',
+  panelDark:'#2a211e', panelDarker:'#1d1714',
+  validGreen:'#5cbf5a', invalidRed:'#c8332a',
+  disabledGrey:'#6e655c', disabledInk:'#4a443d',
+  metalTyre:'#2c2622', metalTyreLight:'#46403a', hub:'#c9c2b4',
+  motorBody:'#7a8a5c', motorShadow:'#5e6a45',
+  leadBody:'#5a5550', leadShadow:'#403c38', leadEdge:'#6e6962',
+  balloonBody:'#d46f8f', balloonShadow:'#b4566f',
+};
+const FONT_DISPLAY = "Bungee, 'Arial Black', Impact, sans-serif";
+const FONT_BODY = "Nunito, 'Segoe UI', Arial, sans-serif";
+
+// Deterministische pseudo-random (seed-based) — voor "vuil" dat NIET per
+// frame flikkert (art-bible §4.6). Mulberry32.
+function seededRand(seed) {
+  let s = seed >>> 0;
+  return function() {
+    s |= 0; s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Vijfpuntige ster-path — art-bible §5.5.
+function starPath(c, cx, cy, R) {
+  c.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const r = i % 2 === 0 ? R : R * 0.42;
+    const a = -Math.PI / 2 + i * Math.PI / 5;
+    const px = cx + Math.cos(a) * r, py = cy + Math.sin(a) * r;
+    i === 0 ? c.moveTo(px, py) : c.lineTo(px, py);
+  }
+  c.closePath();
+}
+function drawStar(c, cx, cy, R, filled) {
+  c.save();
+  c.lineJoin = 'round';
+  if (filled) {
+    starPath(c, cx, cy, R);
+    c.fillStyle = PAL.accent; c.fill();
+    // schaduwfacet: onderste helft afgeklemd
+    c.save();
+    c.beginPath(); c.rect(cx - R, cy, R * 2, R * 1.2); c.clip();
+    starPath(c, cx, cy, R);
+    c.fillStyle = PAL.accentShadow; c.fill();
+    c.restore();
+    starPath(c, cx, cy, R);
+    c.lineWidth = Math.max(2, R * 0.16); c.strokeStyle = PAL.ink; c.stroke();
+    // glans-stip
+    c.beginPath();
+    c.arc(cx - R * 0.32, cy - R * 0.42, R * 0.12, 0, Math.PI * 2);
+    c.fillStyle = PAL.white; c.fill();
+  } else {
+    starPath(c, cx, cy, R);
+    c.fillStyle = PAL.panelDarker; c.fill();
+    c.lineWidth = Math.max(2, R * 0.16); c.strokeStyle = PAL.inkSoft; c.stroke();
+  }
+  c.restore();
+}
+
+// Rij van 3 sterren op een canvas-context (HUD, result, thumbs).
+function drawStarRow(c, cx, cy, R, count) {
+  const gap = R * 2 + R * 0.4;
+  for (let i = 0; i < 3; i++) drawStar(c, cx + (i - 1) * gap, cy, R, i < count);
+}
+
+// drawButton — procedurele 9-slice-knop (art-bible §5.1). Gebruikt voor
+// Canvas-getekende knoppen (drive-HUD pillen). Menu-knoppen zijn HTML/CSS.
+function drawButton(c, x, y, w, h, label, state, cta) {
+  const r = 8;
+  let fill, fillShadow, ink, txt;
+  if (state === 'disabled') {
+    fill = PAL.disabledGrey; fillShadow = PAL.disabledInk;
+    ink = PAL.disabledInk; txt = '#9a9286';
+  } else if (state === 'hover') {
+    fill = cta ? PAL.accentLight : PAL.accent;
+    fillShadow = PAL.accentShadow; ink = PAL.ink; txt = PAL.ink;
+  } else if (state === 'pressed') {
+    fill = PAL.accentShadow; fillShadow = PAL.partShadow; ink = PAL.ink; txt = PAL.ink;
+  } else {
+    fill = cta ? PAL.accent : PAL.part;
+    fillShadow = cta ? PAL.accentShadow : PAL.partShadow;
+    ink = PAL.ink; txt = PAL.ink;
+  }
+  const press = state === 'pressed' ? 3 : 0;
+  c.save();
+  c.lineJoin = 'round'; c.lineCap = 'round';
+  c.fillStyle = fillShadow;
+  c.beginPath(); c.roundRect(x, y + press, w, h, r); c.fill();
+  c.fillStyle = fill;
+  c.beginPath(); c.roundRect(x, y + press, w, h - 4, r); c.fill();
+  c.lineWidth = 4; c.strokeStyle = ink;
+  c.beginPath(); c.roundRect(x, y + press, w, h - 4, r); c.stroke();
+  if (state !== 'disabled') {
+    c.fillStyle = state === 'hover' ? PAL.accentLight : PAL.partLight;
+    c.beginPath(); c.roundRect(x + 6, y + press + 5, w - 12, 6, 3); c.fill();
+  }
+  if (label) {
+    c.fillStyle = txt;
+    c.font = '400 16px ' + FONT_DISPLAY;
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(label.toUpperCase(), x + w / 2, y + press + (h - 4) / 2 + 1);
+  }
+  c.restore();
+}
+
+/* ============================================================
+   PERSISTENTIE — localStorage
+   ============================================================ */
+const LS_PROGRESS   = 'buildmad.v1.progress';
+const LS_LASTDESIGN = 'buildmad.v1.lastDesign.'; // + levelId
+
+// FASE 6 — corrupt-bestendige int-coercion: elke ster-waarde -> 0..3,
+// NaN/strings/undefined worden 0. Voorkomt dat een aangepaste of corrupte
+// save de sterren-telling, achievements of level-select kapotmaakt.
+function sanitizeStars(v) {
+  const n = Math.floor(Number(v));
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return n > 3 ? 3 : n;
+}
+function loadProgress() {
+  try {
+    const raw = localStorage.getItem(LS_PROGRESS);
+    if (raw) gameState.progress = JSON.parse(raw);
+  } catch (e) { /* corrupt save: negeer, start schoon */ }
+  // levelStars moet een plain object zijn met genormaliseerde int-waarden.
+  const src = (gameState.progress && typeof gameState.progress.levelStars === 'object'
+    && gameState.progress.levelStars) || {};
+  const clean = {};
+  for (const lvl of LEVELS) {
+    const s = sanitizeStars(src[lvl.id]);
+    if (s > 0) clean[lvl.id] = s;
+  }
+  gameState.progress.levelStars = clean;
+  let total = 0;
+  for (const k in clean) total += clean[k];
+  gameState.progress.totalStars = total;
+  rebuildUnlockedParts();
+}
+function saveProgress() {
+  // totalStars hertellen uit levelStars
+  let total = 0;
+  for (const k in gameState.progress.levelStars)
+    total += gameState.progress.levelStars[k] || 0;
+  gameState.progress.totalStars = total;
+  try { localStorage.setItem(LS_PROGRESS, JSON.stringify(gameState.progress)); }
+  catch (e) { /* storage vol/geblokkeerd: niet fataal */ }
+}
+
+// Een level telt als "voltooid" wanneer het >=1 ster heeft.
+function levelCompleted(levelId) {
+  return (gameState.progress.levelStars[levelId] || 0) >= 1;
+}
+// Level X is ontgrendeld als level X-1 voltooid is (of X===1).
+function levelUnlocked(idx) {
+  if (idx === 0) return true;
+  return levelCompleted(LEVELS[idx-1].id);
+}
+
+// unlockedParts opbouwen: parts met unlock<=1 zijn altijd vrij,
+// plus alle 'unlocks' van voltooide levels.
+function rebuildUnlockedParts() {
+  const set = new Set();
+  for (const p of PARTS) if (p.unlock <= 1) set.add(p.id);
+  for (const lvl of LEVELS) {
+    if (levelCompleted(lvl.id)) {
+      for (const pid of (lvl.unlocks || [])) set.add(pid);
+    }
+  }
+  gameState.unlockedParts = set;
+}
+function isPartUnlocked(partId) {
+  return gameState.unlockedParts.has(partId);
+}
+
+/* ============================================================
+   FASE 6 — ACHIEVEMENTS (localStorage, try/catch, toast bij unlock)
+   ============================================================
+   Voorwaarden afgeleid uit data die de game al bijhoudt. Geen
+   gameplay-/physics-code aangeraakt. Persist los van progress:
+   - buildmad.v1.achievements : { id:true } ontgrendelde prestaties
+   - buildmad.v1.usedparts    : [partId,...] ooit op het grid geplaatst
+   ============================================================ */
+const LS_ACHIEVEMENTS = 'buildmad.v1.achievements';
+const LS_USEDPARTS    = 'buildmad.v1.usedparts';
+
+const ACHIEVEMENTS = [
+  { id:'eerste_stappen', icon:'\u{1F697}', title:'Eerste Stappen',
+    desc:'Voltooi level 1.',
+    test:(c) => (c.levelStars[1] || 0) >= 1 },
+  { id:'eerste_drie', icon:'⭐', title:'Drie Sterren!',
+    desc:'Haal voor het eerst 3 sterren op een level.',
+    test:(c) => c.maxStarsOnAnyLevel >= 3 },
+  { id:'spaarmeester', icon:'\u{1F527}', title:'Schroot-Spaarmeester',
+    desc:'3 sterren op 3 levels met een budget-criterium.',
+    test:(c) => c.threeStarBudgetLevels >= 3 },
+  { id:'roest_racer', icon:'\u{1F3CE}', title:'Roest-Racer',
+    desc:'3 sterren op 3 levels met een tijd-criterium.',
+    test:(c) => c.threeStarTimeLevels >= 3 },
+  { id:'verzamelaar', icon:'\u{1F9F0}', title:'Verzamelaar',
+    desc:'Gebruik ooit alle 10 onderdelen.',
+    test:(c) => c.usedPartsCount >= PARTS.length },
+  { id:'speedrunner', icon:'⏱', title:'Speedrunner',
+    desc:'Finish een level binnen 60% van de par-tijd.',
+    test:(c) => c.speedrunDone === true },
+  { id:'geen_herbouw', icon:'\u{1F3AF}', title:'In Een Keer Goed',
+    desc:'Finish een level bij de eerste rit, zonder te herbouwen.',
+    test:(c) => c.noRebuildFinish === true },
+  { id:'kampioen', icon:'\u{1F3C6}', title:'Schroothoop-Kampioen',
+    desc:'Verzamel alle 30 sterren (alle levels 3 sterren).',
+    test:(c) => c.totalStars >= LEVELS.length * 3 },
+];
+
+const achState = {
+  unlocked: {},
+  usedParts: new Set(),
+  speedrunDone: false,
+  noRebuildFinish: false,
+};
+
+function loadAchievements() {
+  try {
+    const raw = localStorage.getItem(LS_ACHIEVEMENTS);
+    if (raw) achState.unlocked = JSON.parse(raw) || {};
+  } catch (e) { achState.unlocked = {}; }
+  try {
+    const raw = localStorage.getItem(LS_USEDPARTS);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) achState.usedParts = new Set(arr);
+    }
+  } catch (e) { achState.usedParts = new Set(); }
+}
+function saveAchievements() {
+  try { localStorage.setItem(LS_ACHIEVEMENTS, JSON.stringify(achState.unlocked)); }
+  catch (e) { /* niet fataal */ }
+}
+function saveUsedParts() {
+  try { localStorage.setItem(LS_USEDPARTS, JSON.stringify([...achState.usedParts])); }
+  catch (e) { /* niet fataal */ }
+}
+
+function markPartsUsed(placed) {
+  let changed = false;
+  for (const p of placed) {
+    if (!p || !p.partId) continue;
+    if (!achState.usedParts.has(p.partId)) {
+      achState.usedParts.add(p.partId); changed = true;
+    }
+  }
+  if (changed) saveUsedParts();
+}
+
+function buildAchContext() {
+  const ls = gameState.progress.levelStars || {};
+  let total = 0, maxStars = 0, budgetLevels = 0, timeLevels = 0;
+  for (const lvl of LEVELS) {
+    const s = ls[lvl.id] || 0;
+    total += s;
+    if (s > maxStars) maxStars = s;
+    if (s >= 3) {
+      if (lvl.threeStarTime != null) timeLevels++;
+      else budgetLevels++;
+    }
+  }
+  return {
+    levelStars: ls,
+    totalStars: total,
+    maxStarsOnAnyLevel: maxStars,
+    threeStarBudgetLevels: budgetLevels,
+    threeStarTimeLevels: timeLevels,
+    usedPartsCount: achState.usedParts.size,
+    speedrunDone: achState.speedrunDone,
+    noRebuildFinish: achState.noRebuildFinish,
+  };
+}
+
+function checkAchievements() {
+  const ctx = buildAchContext();
+  let newly = 0;
+  for (const a of ACHIEVEMENTS) {
+    if (achState.unlocked[a.id]) continue;
+    let ok = false;
+    try { ok = !!a.test(ctx); } catch (e) { ok = false; }
+    if (ok) {
+      achState.unlocked[a.id] = true;
+      newly++;
+      showToast(a.icon, 'Prestatie ontgrendeld', a.title);
+    }
+  }
+  if (newly > 0) saveAchievements();
+  return newly;
+}
+
+function showToast(icon, title, desc) {
+  const wrap = document.getElementById('toastWrap');
+  if (!wrap) return;
+  const el = document.createElement('div');
+  el.className = 'toast';
+  const i = document.createElement('div'); i.className = 'ti'; i.textContent = icon;
+  const body = document.createElement('div');
+  const t = document.createElement('div'); t.className = 'tt'; t.textContent = title;
+  const d = document.createElement('div'); d.className = 'td'; d.textContent = desc;
+  body.appendChild(t); body.appendChild(d);
+  el.appendChild(i); el.appendChild(body);
+  wrap.appendChild(el);
+  try { sfx.play('star-reveal-3'); } catch (e) { /* audio nog niet klaar */ }
+  setTimeout(() => {
+    el.classList.add('out');
+    setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 360);
+  }, 3200);
+}
+
+function renderAchievements() {
+  const list = document.getElementById('achList');
+  if (!list) return;
+  list.innerHTML = '';
+  let count = 0;
+  for (const a of ACHIEVEMENTS) {
+    const got = !!achState.unlocked[a.id];
+    if (got) count++;
+    const card = document.createElement('div');
+    card.className = 'achCard' + (got ? '' : ' locked');
+    const ic = document.createElement('div'); ic.className = 'icon';
+    ic.textContent = got ? a.icon : '\u{1F512}';
+    const body = document.createElement('div'); body.className = 'body';
+    const t = document.createElement('div'); t.className = 'title'; t.textContent = a.title;
+    const d = document.createElement('div'); d.className = 'desc'; d.textContent = a.desc;
+    body.appendChild(t); body.appendChild(d);
+    const badge = document.createElement('div'); badge.className = 'badge';
+    badge.textContent = got ? '✅' : '';
+    card.appendChild(ic); card.appendChild(body); card.appendChild(badge);
+    list.appendChild(card);
+  }
+  const prog = document.getElementById('achProgress');
+  if (prog) prog.textContent = count + ' / ' + ACHIEVEMENTS.length + ' ontgrendeld';
+}
+
+/* ============================================================
+   FASE 6 — SHARE (Web Share API + clipboard-fallback)
+   ============================================================ */
+const SHARE_URL = 'https://mebbols.com/games/build-mad/';
+function currentTotalStars() {
+  let total = 0;
+  const ls = gameState.progress.levelStars || {};
+  for (const lvl of LEVELS) total += (ls[lvl.id] || 0);
+  return total;
+}
+function shareGame(noteElId) {
+  const stars = currentTotalStars();
+  const maxStars = LEVELS.length * 3;
+  const text = 'Ik heb ' + stars + '/' + maxStars +
+    ' sterren in Build Mad! Bouw jouw voertuig en versla de baan:';
+  const note = noteElId ? document.getElementById(noteElId) : null;
+  function confirmNote(msg) {
+    if (note) {
+      note.textContent = msg;
+      setTimeout(() => { if (note) note.textContent = ''; }, 2600);
+    }
+  }
+  if (navigator.share) {
+    navigator.share({ title: 'Build Mad', text: text, url: SHARE_URL })
+      .then(() => confirmNote('Gedeeld!'))
+      .catch(() => { /* gebruiker annuleerde: stil */ });
+    return;
+  }
+  const full = text + ' ' + SHARE_URL;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(full)
+      .then(() => confirmNote('Link gekopieerd!'))
+      .catch(() => legacyCopy(full, confirmNote));
+  } else {
+    legacyCopy(full, confirmNote);
+  }
+}
+function legacyCopy(text, confirmNote) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    confirmNote(ok ? 'Link gekopieerd!' : 'Kopieren mislukt');
+  } catch (e) {
+    confirmNote('Kopieren mislukt');
+  }
+}
+
+/* ---------- Per-level laatste ontwerp ---------- */
+function saveLastDesign(levelId) {
+  // alleen niet-skeleton parts persisten; skeleton wordt bij load herbouwd.
+  const design = gameState.placed
+    .filter(p => !p.skeleton)
+    .map(p => ({ t:p.partId, x:p.gx, y:p.gy }));
+  try {
+    localStorage.setItem(LS_LASTDESIGN + levelId, JSON.stringify(design));
+  } catch (e) { /* niet fataal */ }
+}
+function loadLastDesign(levelId) {
+  try {
+    const raw = localStorage.getItem(LS_LASTDESIGN + levelId);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    // FASE 6: corrupt-bestendig — alleen een echte array met geldige
+    // cel-coordinaten teruggeven; enterBuild filtert per part nog eens.
+    if (!Array.isArray(parsed)) return null;
+    return parsed.filter(d => d && d.t != null
+      && Number.isFinite(Number(d.x)) && Number.isFinite(Number(d.y)))
+      .map(d => ({ t:d.t, x:Math.floor(Number(d.x)), y:Math.floor(Number(d.y)) }));
+  } catch (e) { return null; }
+}
+
+loadProgress();
+loadAchievements();
+
+/* ============================================================
+   STATE-MACHINE
+   ============================================================ */
+const screens = {
+  title: document.getElementById('titleScreen'),
+  levelSelect: document.getElementById('levelSelectScreen'),
+  build: document.getElementById('buildScreen'),
+  drive: document.getElementById('driveScreen'),
+  result: document.getElementById('resultModal'),
+  achievements: document.getElementById('achievementsScreen'),
+};
+function setState(next) {
+  if (!STATES.includes(next)) return;
+  gameState.state = next;
+  for (const [name, el] of Object.entries(screens)) {
+    el.classList.toggle('hidden', name !== next);
+  }
+  if (next === 'result') {
+    // drive-canvas blijft zichtbaar onder result-modal
+    screens.drive.classList.remove('hidden');
+  }
+  if (next === 'levelSelect') renderLevelSelect();
+  if (next === 'build') enterBuild();
+  if (next === 'drive') enterDrive();
+  if (next === 'result') showResult();
+  if (next === 'achievements') renderAchievements();
+
+  // Fase 4 — muziek-crossfade per state (build-jam / drive-actie).
+  if (next === 'build') sfx.musicPlay('build');
+  else if (next === 'drive') sfx.musicPlay('drive');
+  else if (next === 'result') { /* drive-muziek loopt door onder modal */ }
+  else sfx.musicStop();
+}
+
+/* ============================================================
+   LEVEL SELECT — 5x2 grid, thumbnails, sterren, slot-iconen
+   ============================================================ */
+function starsString(n) {
+  let s = '';
+  for (let i = 0; i < 3; i++) s += i < n ? '★' : '☆';
+  return s;
+}
+
+// Render een klein baan-silhouet van de obstacles-array op een canvas.
+function drawLevelThumb(canvas, lvl) {
+  const c = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  c.clearRect(0, 0, W, H);
+  c.lineJoin = 'round';
+  // hemel-gradient in de thumb
+  const sky = c.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, PAL.bgSky); sky.addColorStop(1, PAL.bgMid);
+  c.fillStyle = sky; c.fillRect(0, 0, W, H);
+  const sx = W / lvl.length;          // schaal x
+  const baseY = H * 0.66;             // grond-lijn in thumb
+  for (const ob of lvl.obstacles) {
+    const ox = ob.x * sx;
+    if (ob.type === 'flat') {
+      c.fillStyle = PAL.ground;
+      c.fillRect(ox, baseY, ob.w * sx, H - baseY);
+      c.fillStyle = PAL.groundLight;
+      c.fillRect(ox, baseY, ob.w * sx, 2);
+    } else if (ob.type === 'mud') {
+      c.fillStyle = PAL.mud;
+      c.fillRect(ox, baseY, ob.w * sx, H - baseY);
+    } else if (ob.type === 'bump') {
+      c.fillStyle = PAL.ground;
+      c.fillRect(ox - 4, baseY, 88 * sx, H - baseY);
+      c.fillStyle = PAL.groundLight;
+      const bh = (ob.h || 30) * sx * 1.4 + 4;
+      c.beginPath();
+      c.arc(ox + 40 * sx, baseY, bh, Math.PI, 0);
+      c.fill();
+    } else if (ob.type === 'gap') {
+      // niets — gat in de grond
+    } else if (ob.type === 'ramp') {
+      c.fillStyle = PAL.ground;
+      c.beginPath();
+      c.moveTo(ox, baseY);
+      c.lineTo(ox + 120 * sx, baseY - 18);
+      c.lineTo(ox + 120 * sx, H);
+      c.lineTo(ox, H);
+      c.closePath(); c.fill();
+    } else if (ob.type === 'seesaw') {
+      const len = (ob.len || 240) * sx;
+      c.strokeStyle = PAL.part; c.lineWidth = 3;
+      c.beginPath();
+      c.moveTo(ox, baseY - 6);
+      c.lineTo(ox + len, baseY + 6);
+      c.stroke();
+    } else if (ob.type === 'stack') {
+      c.fillStyle = PAL.warn;
+      for (let i = 0; i < (ob.count || 5); i++) {
+        const s = 6;
+        c.fillRect(ox + 24 * sx, baseY - (i + 1) * s, s, s - 1);
+      }
+    } else if (ob.type === 'spinner') {
+      c.strokeStyle = PAL.part; c.lineWidth = 3;
+      c.beginPath();
+      c.moveTo(ox + 50 * sx - 14, baseY - 22);
+      c.lineTo(ox + 50 * sx + 14, baseY - 6);
+      c.stroke();
+    }
+  }
+  // start- en finish-markers
+  c.fillStyle = PAL.validGreen; c.fillRect(2, baseY - 16, 4, 16);
+  c.fillStyle = PAL.warn; c.fillRect(W - 6, baseY - 20, 4, 20);
+}
+
+function renderLevelSelect() {
+  rebuildUnlockedParts();
+  const grid = document.getElementById('levelGrid');
+  grid.innerHTML = '';
+  let total = 0;
+  LEVELS.forEach((lvl, idx) => {
+    const stars = gameState.progress.levelStars[lvl.id] || 0;
+    total += stars;
+    const unlocked = levelUnlocked(idx);
+    const card = document.createElement('div');
+    card.className = 'levelCard' + (unlocked ? '' : ' locked');
+    const thumb = document.createElement('canvas');
+    thumb.className = 'thumb';
+    thumb.width = 108; thumb.height = 42;
+    const num = document.createElement('div');
+    num.className = 'num';
+    num.textContent = 'Level ' + lvl.id;
+    const nm = document.createElement('div');
+    nm.className = 'nm';
+    nm.textContent = lvl.name;
+    const st = document.createElement('div');
+    st.className = 'st';
+    card.appendChild(num);
+    card.appendChild(thumb);
+    card.appendChild(nm);
+    if (unlocked) {
+      drawLevelThumb(thumb, lvl);
+      // sterren-rij als canvas-iconen (art-bible §5.5)
+      const sc = document.createElement('canvas');
+      sc.width = 78; sc.height = 22;
+      const sctx = sc.getContext('2d');
+      drawStarRow(sctx, 39, 11, 8, stars);
+      st.appendChild(sc);
+      card.appendChild(st);
+      card.addEventListener('click', () => {
+        gameState.levelIndex = idx;
+        setState('build');
+      });
+    } else {
+      // locked: slot-icoon i.p.v. sterren, thumbnail gedimd
+      const tc = thumb.getContext('2d');
+      tc.fillStyle = '#2a211e'; tc.fillRect(0, 0, 108, 42);
+      const lock = document.createElement('div');
+      lock.className = 'lock';
+      lock.textContent = '🔒';
+      card.appendChild(lock);
+    }
+    grid.appendChild(card);
+  });
+  const maxStars = LEVELS.length * 3;
+  document.getElementById('lvlTotalStars').textContent =
+    '⭐ ' + total + ' / ' + maxStars;
+}
+
+/* ============================================================
+   BUILD-FASE
+   ============================================================ */
+const GRID = gameState.grid;
+let buildCanvasRect = { x:0, y:0, w:0, h:0 }; // schermregio van het grid
+
+function enterBuild() {
+  const lvl = LEVELS[gameState.levelIndex];
+  document.getElementById('buildLevelName').textContent =
+    'Level ' + lvl.id + ': ' + lvl.name;
+  gameState.driveAttempt = 0;   // FASE 6: nieuwe build => rit-teller reset
+  rebuildUnlockedParts();
+  // Vorig ontwerp laden indien aanwezig, anders kale skeleton.
+  initChassisSkeleton();
+  const last = loadLastDesign(lvl.id);
+  if (last && last.length) {
+    for (const d of last) {
+      // alleen plaatsen als part bestaat, ontgrendeld is, en past
+      if (PART_BY_ID[d.t] && isPartUnlocked(d.t)
+          && canPlace(d.t, d.x, d.y)) {
+        gameState.placed.push({ partId:d.t, gx:d.x, gy:d.y, skeleton:false });
+      }
+    }
+  }
+  recomputeBudget();
+  renderPartBin();
+  layoutBuildCanvas();
+  updateStartButton();
+}
+
+// 4x2 chassis-skeleton, gecentreerd onderaan het grid (rij 3-4).
+function initChassisSkeleton() {
+  gameState.placed = [];
+  const startGx = 3, startGy = 3;
+  for (let dx = 0; dx < 4; dx++) {
+    for (let dy = 0; dy < 2; dy++) {
+      gameState.placed.push({ partId:'chassis', gx:startGx+dx, gy:startGy+dy,
+        skeleton:true });
+    }
+  }
+  // 1 gratis motor inbegrepen (GDD §3.1 motor-regel).
+  gameState.placed.push({ partId:'motorBasic', gx:startGx+1, gy:startGy-1,
+    skeleton:true });
+}
+
+function layoutBuildCanvas() {
+  const gw = GRID.cols * GRID.cell;
+  const gh = GRID.rows * GRID.cell;
+  const scale = Math.min(2.4, (VW < 720 ? VW-20 : VW-200) / gw,
+    (VH-220) / gh);
+  const sw = gw * scale, sh = gh * scale;
+  buildCanvasRect = {
+    x: (VW < 720 ? VW : VW-180) / 2 - sw/2,
+    y: 70,
+    w: sw, h: sh, scale,
+  };
+}
+
+function recomputeBudget() {
+  let used = 0;
+  for (const p of gameState.placed) {
+    if (p.skeleton && p.partId === 'chassis') continue; // skeleton gratis
+    if (p.skeleton && p.partId === 'motorBasic') continue; // gratis motor
+    used += PART_BY_ID[p.partId].cost;
+  }
+  gameState.budgetUsed = used;
+}
+
+function renderPartBin() {
+  const bin = document.getElementById('partBin');
+  bin.innerHTML = '';
+  // chassis vooraan, dan de rest in PARTS-volgorde.
+  const order = ['chassis', ...PARTS.filter(p => p.id !== 'chassis').map(p => p.id)];
+  const lvl = LEVELS[gameState.levelIndex];
+  const remaining = lvl.budgetMax - gameState.budgetUsed;
+  for (const pid of order) {
+    const part = PART_BY_ID[pid];
+    const unlocked = isPartUnlocked(pid);
+    const affordable = part.cost <= remaining || pid === 'chassis';
+    const chip = document.createElement('div');
+    chip.className = 'partChip' + (unlocked ? '' : ' locked')
+      + (unlocked && !affordable ? ' unaffordable' : '');
+    chip.dataset.partId = pid;
+    // onderdeel-icoon: echte drawPart-render verkleind (art-bible §5.7)
+    const ic = document.createElement('canvas');
+    ic.className = 'sw'; ic.width = 80; ic.height = 80;
+    const ic2 = ic.getContext('2d');
+    ic2.scale(2, 2);
+    const iw = 40, ih = 40;
+    drawPart(ic2, pid, 4, 4, iw - 8, ih - 8, 0, 1);
+    chip.appendChild(ic);
+    const nm = document.createElement('div');
+    nm.textContent = part.name;
+    chip.appendChild(nm);
+    if (unlocked) {
+      const cost = document.createElement('div');
+      cost.className = 'cost';
+      cost.textContent = part.cost;
+      chip.appendChild(cost);
+      chip.addEventListener('pointerenter', () => sfx.play('ui-hover'));
+      chip.addEventListener('pointerdown', (e) => startDragFromBin(e, pid));
+    } else {
+      const lk = document.createElement('div');
+      lk.className = 'lk';
+      // FASE 6 (P3-fix): part.unlock = level dat het onderdeel in zijn
+      // unlocks-lijst heeft; het komt pas vrij NA dat level -> speelbaar
+      // vanaf het volgende level. Label dus "vanaf L{unlock+1}".
+      lk.textContent = '🔒 vanaf L' + (part.unlock + 1);
+      chip.appendChild(lk);
+    }
+    bin.appendChild(chip);
+  }
+  updateBudgetUI();
+}
+
+function updateBudgetUI() {
+  const lvl = LEVELS[gameState.levelIndex];
+  const el = document.getElementById('buildBudget');
+  const used = gameState.budgetUsed, max = lvl.budgetMax;
+  document.getElementById('buildBudgetText').textContent =
+    'BUDGET: ' + used + ' / ' + max;
+  const fill = document.getElementById('buildBudgetFill');
+  fill.style.width = Math.min(100, (used / max) * 100) + '%';
+  const over = used > max;
+  const lean = used < max * 0.5;
+  el.classList.toggle('over', over);
+  el.classList.toggle('lean', lean && !over);
+  // "LEKKER PUUR"-beloning bij <50% budget (art-bible §5.4)
+  document.getElementById('buildLeanTag').textContent =
+    (lean && !over) ? '✔ LEKKER PUUR' : '';
+}
+
+/* ---------- Connectiviteits-check (BFS vanaf chassis-skeleton) ---------- */
+function cellsOf(p) {
+  const part = PART_BY_ID[p.partId];
+  const cells = [];
+  for (let dx = 0; dx < part.gw; dx++)
+    for (let dy = 0; dy < part.gh; dy++)
+      cells.push([p.gx+dx, p.gy+dy]);
+  return cells;
+}
+function cellKey(x,y){ return x+','+y; }
+
+function buildConnectivity() {
+  const cellMap = new Map();
+  gameState.placed.forEach((p, i) => {
+    for (const [cx,cy] of cellsOf(p)) cellMap.set(cellKey(cx,cy), i);
+  });
+  return cellMap;
+}
+
+function checkConnectivity() {
+  const cellMap = buildConnectivity();
+  const visited = new Set();
+  const queue = [];
+  gameState.placed.forEach((p, i) => {
+    if (p.skeleton) { visited.add(i); }
+  });
+  gameState.placed.forEach((p, i) => {
+    if (p.skeleton) for (const [cx,cy] of cellsOf(p)) queue.push([cx,cy]);
+  });
+  if (queue.length === 0) return false;
+  const seenCell = new Set();
+  while (queue.length) {
+    const [cx,cy] = queue.shift();
+    const k = cellKey(cx,cy);
+    if (seenCell.has(k)) continue;
+    seenCell.add(k);
+    const idx = cellMap.get(k);
+    if (idx !== undefined) visited.add(idx);
+    for (const [nx,ny] of [[cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]]) {
+      const nk = cellKey(nx,ny);
+      if (cellMap.has(nk) && !seenCell.has(nk)) queue.push([nx,ny]);
+    }
+  }
+  return visited.size === gameState.placed.length;
+}
+
+// Validatie samengevat: returnt {ok, msg}
+function validateBuild() {
+  const lvl = LEVELS[gameState.levelIndex];
+  const wheels = gameState.placed.filter(p => PART_BY_ID[p.partId].role === 'wheel');
+  const motors = gameState.placed.filter(p => PART_BY_ID[p.partId].role === 'motor');
+  if (wheels.length < 2) return { ok:false, msg:'Minstens 2 wielen nodig' };
+  if (motors.length < 1) return { ok:false, msg:'Minstens 1 motor nodig' };
+  if (gameState.budgetUsed > lvl.budgetMax) return { ok:false, msg:'Over budget!' };
+  if (!checkConnectivity()) return { ok:false, msg:'Niet alles is verbonden' };
+  return { ok:true, msg:'' };
+}
+
+function updateStartButton() {
+  const v = validateBuild();
+  document.getElementById('btnStart').disabled = !v.ok;
+  document.getElementById('buildValidMsg').textContent = v.ok ? '' : v.msg;
+  updateBudgetUI();
+}
+
+/* ---------- Drag & drop (pointer events, unified mouse+touch) ---------- */
+const drag = {
+  active:false, partId:null, fromPlacedIdx:-1,
+  px:0, py:0,
+};
+const SNAP = GRID.cell;
+const isTouch = matchMedia('(pointer:coarse)').matches;
+
+function startDragFromBin(e, partId) {
+  if (gameState.state !== 'build') return;
+  if (!isPartUnlocked(partId)) return;
+  e.preventDefault();
+  drag.active = true; drag.partId = partId; drag.fromPlacedIdx = -1;
+  drag.px = e.clientX; drag.py = e.clientY;
+}
+
+cv.addEventListener('pointerdown', (e) => {
+  if (gameState.state !== 'build') return;
+  const gp = screenToGrid(e.clientX, e.clientY);
+  if (!gp) return;
+  for (let i = gameState.placed.length - 1; i >= 0; i--) {
+    const p = gameState.placed[i];
+    if (p.skeleton) continue;
+    if (cellsOf(p).some(([cx,cy]) => cx === gp.gx && cy === gp.gy)) {
+      if (e.button === 2) { removePlaced(i); return; }
+      drag.active = true; drag.partId = p.partId; drag.fromPlacedIdx = i;
+      drag.px = e.clientX; drag.py = e.clientY;
+      gameState.placed.splice(i, 1);
+      recomputeBudget(); updateStartButton();
+      return;
+    }
+  }
+});
+cv.addEventListener('contextmenu', (e) => {
+  if (gameState.state === 'build') e.preventDefault();
+});
+
+window.addEventListener('pointermove', (e) => {
+  if (drag.active) { drag.px = e.clientX; drag.py = e.clientY; }
+});
+
+window.addEventListener('pointerup', (e) => {
+  if (!drag.active) return;
+  drag.active = false;
+  if (gameState.state !== 'build') { drag.partId = null; return; }
+  const gp = screenToGrid(e.clientX, e.clientY);
+  if (gp && canPlace(drag.partId, gp.gx, gp.gy)) {
+    placePart(drag.partId, gp.gx, gp.gy);
+  }
+  drag.partId = null; drag.fromPlacedIdx = -1;
+});
+
+// B-06: onderbroken (touch) drag moet de build-drag schoon resetten,
+// anders blijft een ghost-part renderen tot de volgende pointerup.
+window.addEventListener('pointercancel', () => {
+  if (!drag.active) return;
+  drag.active = false;
+  drag.partId = null; drag.fromPlacedIdx = -1;
+});
+
+function screenToGrid(sx, sy) {
+  const r = buildCanvasRect;
+  if (sx < r.x || sx > r.x + r.w || sy < r.y || sy > r.y + r.h) return null;
+  const lx = (sx - r.x) / r.scale;
+  const ly = (sy - r.y) / r.scale;
+  const gx = Math.round(lx / SNAP - 0.5);
+  const gy = Math.round(ly / SNAP - 0.5);
+  if (gx < 0 || gy < 0) return null;
+  return { gx, gy };
+}
+
+function canPlace(partId, gx, gy) {
+  const part = PART_BY_ID[partId];
+  if (!part) return false;
+  if (gx < 0 || gy < 0 || gx + part.gw > GRID.cols || gy + part.gh > GRID.rows)
+    return false;
+  const occupied = new Set();
+  for (const p of gameState.placed)
+    for (const [cx,cy] of cellsOf(p)) occupied.add(cellKey(cx,cy));
+  for (let dx = 0; dx < part.gw; dx++)
+    for (let dy = 0; dy < part.gh; dy++)
+      if (occupied.has(cellKey(gx+dx, gy+dy))) return false;
+  return true;
+}
+
+function placePart(partId, gx, gy) {
+  // 'placeT' = animatie-klok voor de scale-bounce (fase 4 juice).
+  gameState.placed.push({ partId, gx, gy, skeleton:false, placeT:0 });
+  recomputeBudget();
+  updateStartButton();
+  sfx.play('part-place');
+}
+function removePlaced(idx) {
+  // puff-particle op het cel-centrum van het verwijderde part
+  const rp = gameState.placed[idx];
+  if (rp) {
+    const rpart = PART_BY_ID[rp.partId];
+    const rr = buildCanvasRect;
+    const rcell = GRID.cell * rr.scale;
+    burstPuff(rr.x + (rp.gx + rpart.gw / 2) * rcell,
+              rr.y + (rp.gy + rpart.gh / 2) * rcell, 'screen');
+  }
+  gameState.placed.splice(idx, 1);
+  recomputeBudget();
+  updateStartButton();
+  sfx.play('part-remove');
+}
+
+document.getElementById('btnBuildReset').addEventListener('click', () => {
+  // B-07: een lopende drag annuleren zodat de Wis-knop geen part op
+  // de verse skeleton plaatst bij de volgende pointerup.
+  drag.active = false; drag.partId = null; drag.fromPlacedIdx = -1;
+  initChassisSkeleton();
+  recomputeBudget();
+  updateStartButton();
+});
+
+/* ============================================================
+   BUILD -> PHYSICS conversie
+   ============================================================ */
+let engine = null;
+const GROUND_Y = 420;       // logische baseline van de grond
+const SPAWN_X = 90;         // spawn-positie X voertuig
+
+function buildToPhysics() {
+  const spawnX = SPAWN_X, spawnY = GROUND_Y - 120;
+  const cell = GRID.cell;
+
+  const wheelParts = [];
+  const partDefs = [];
+  const balloonAnchors = [];
+  let motorTorque = 0;
+
+  for (const p of gameState.placed) {
+    const part = PART_BY_ID[p.partId];
+    const cx = spawnX + (p.gx + part.gw/2) * cell;
+    const cy = spawnY + (p.gy + part.gh/2) * cell;
+    if (part.role === 'wheel') {
+      wheelParts.push({ p, part, cx, cy });
+    } else {
+      const rect = Bodies.rectangle(cx, cy, part.gw*cell, part.gh*cell, {
+        density: part.density,
+        friction: part.friction,
+        restitution: part.restitution || 0,
+      });
+      partDefs.push(rect);
+      if (part.role === 'motor') motorTorque += part.torque;
+      if (part.role === 'balloon')
+        balloonAnchors.push({ x:cx, y:cy, lift:part.lift });
+    }
+  }
+  if (partDefs.length === 0) {
+    partDefs.push(Bodies.rectangle(spawnX, spawnY, cell, cell, { density:0.002 }));
+  }
+
+  const chassis = Body.create({ parts: partDefs, friction: 0.5 });
+
+  const liftOffsets = balloonAnchors.map(b => ({
+    dx: b.x - chassis.position.x,
+    dy: b.y - chassis.position.y,
+    lift: b.lift,
+  }));
+
+  const wheels = [];
+  const constraints = [];
+  for (const w of wheelParts) {
+    const wheelBody = Bodies.circle(w.cx, w.cy, w.part.radius, {
+      density: w.part.density,
+      friction: w.part.friction,
+      frictionStatic: 1.0,
+    });
+    const c = Constraint.create({
+      bodyA: chassis,
+      pointA: { x: w.cx - chassis.position.x, y: w.cy - chassis.position.y },
+      bodyB: wheelBody,
+      pointB: { x:0, y:0 },
+      length: 0,
+      stiffness: 0.9,
+      damping: 0.1,
+    });
+    wheels.push({ body:wheelBody, part:w.part, baseFriction:w.part.friction });
+    constraints.push(c);
+  }
+
+  const composite = Composite.create();
+  Composite.add(composite, [chassis, ...wheels.map(w => w.body), ...constraints]);
+
+  return {
+    composite, chassis, wheels, constraints,
+    motorTorque, liftOffsets, spawnX, spawnY,
+  };
+}
+
+/* ============================================================
+   OBSTAKEL-BUILDERS — converteren obstacle-data naar Matter bodies
+   ============================================================
+   Elke builder retourneert een array bodies. Bodies krijgen een
+   'renderType' veld voor de render-laag. Mud-bodies krijgen label
+   'mud' zodat het render + (eventuele) friction-zone het herkent.
+
+   MUD-KEUZE: een dynamische friction-override op het voertuig wanneer
+   het in een mud-zone zit is fragiel (per-wiel collision-tracking,
+   timing-issues bij snel passeren). We kiezen de pragmatische,
+   robuuste route uit de taakopdracht: mud = een statisch grond-
+   segment met permanent lage friction (~0.2). Het voertuig glipt
+   weg zodra het de mud-strook raakt en grijpt weer op gewone grond.
+   Eenvoudig, deterministisch, geen frame-afhankelijke glitches.
+   ============================================================ */
+
+function buildFlat(x, w) {
+  const seg = Bodies.rectangle(x + w/2, GROUND_Y + 40, w, 80, {
+    isStatic:true, friction:0.8, label:'ground',
+  });
+  seg.renderType = 'flat';
+  return [seg];
+}
+
+function buildBump(x, h) {
+  // bump = grond-segment met een ronde hobbel erbovenop.
+  const w = 80;
+  const ground = Bodies.rectangle(x + w/2, GROUND_Y + 40, w, 80, {
+    isStatic:true, friction:0.8, label:'ground',
+  });
+  ground.renderType = 'flat';
+  const hump = Bodies.circle(x + w/2, GROUND_Y + h - 10, h + 14, {
+    isStatic:true, friction:0.8, label:'ground',
+  });
+  hump.renderType = 'bump';
+  return [ground, hump];
+}
+
+function buildGap(x, w) {
+  // gap = geen grond. Geen bodies; het gat valt vanzelf in de baan.
+  return [];
+}
+
+function buildMud(x, w) {
+  // mud = statisch lage-friction grond-segment (~0.2). Zie MUD-KEUZE.
+  const seg = Bodies.rectangle(x + w/2, GROUND_Y + 40, w, 80, {
+    isStatic:true, friction:0.2, label:'mud',
+  });
+  seg.renderType = 'mud';
+  return [seg];
+}
+
+function buildRamp(x, angle) {
+  // ramp = schuin omhoog lopend grond-segment. angle in radialen.
+  const len = 140;
+  const seg = Bodies.rectangle(x + len/2, GROUND_Y + 24, len, 80, {
+    isStatic:true, friction:0.8, label:'ground', angle:-(angle || 0.32),
+  });
+  seg.renderType = 'ramp';
+  return [seg];
+}
+
+function buildSeesaw(x, len) {
+  // seesaw = balk op een pivot-constraint, kan kantelen.
+  const L = len || 240;
+  const pivotX = x + L/2;
+  const pivotY = GROUND_Y - 4;
+  // steunblok zodat de balk niet op de grond ligt
+  const post = Bodies.rectangle(pivotX, GROUND_Y + 30, 28, 60, {
+    isStatic:true, friction:0.8, label:'ground',
+  });
+  post.renderType = 'flat';
+  const plank = Bodies.rectangle(pivotX, pivotY - 6, L, 14, {
+    density:0.0025, friction:0.9, label:'seesaw',
+  });
+  plank.renderType = 'seesaw';
+  const pivot = Constraint.create({
+    pointA: { x:pivotX, y:pivotY },
+    bodyB: plank,
+    pointB: { x:0, y:0 },
+    length:0, stiffness:1,
+  });
+  // markeer plank zodat we 'm in spinners/seesaws-lijst kunnen volgen
+  return { bodies:[post, plank], constraint:pivot, plank };
+}
+
+function buildStack(x, count) {
+  // stack = verticale toren rubber-blokken (restitution 0.9).
+  const n = count || 5;
+  const size = 26;
+  const bodies = [];
+  for (let i = 0; i < n; i++) {
+    const box = Bodies.rectangle(
+      x + 40, GROUND_Y - size/2 - i*size, size, size, {
+      density:0.0016, friction:0.4, restitution:0.85, label:'rubber',
+    });
+    box.renderType = 'rubber';
+    bodies.push(box);
+  }
+  return bodies;
+}
+
+function buildSpinner(x) {
+  // spinner = kinematische roterende balk. Static body waarvan we
+  // de angle per tick handmatig draaien (Body.setAngularVelocity
+  // werkt niet op static bodies — we roteren via Body.rotate).
+  const cx = x + 50;
+  const cy = GROUND_Y - 30;
+  const bar = Bodies.rectangle(cx, cy, 120, 16, {
+    isStatic:true, friction:0.6, label:'spinner',
+  });
+  bar.renderType = 'spinner';
+  bar.spinSpeed = 0.05; // rad/tick
+  return [bar];
+}
+
+/* ---------- Level-geometrie naar physics ---------- */
+function buildLevelBodies(lvl) {
+  const bodies = [];
+  gameState.spinners = [];
+  gameState.seesaws = [];
+
+  for (const ob of lvl.obstacles) {
+    let result;
+    switch (ob.type) {
+      case 'flat':    result = buildFlat(ob.x, ob.w); break;
+      case 'bump':    result = buildBump(ob.x, ob.h || 30); break;
+      case 'gap':     result = buildGap(ob.x, ob.w); break;
+      case 'mud':     result = buildMud(ob.x, ob.w); break;
+      case 'ramp':    result = buildRamp(ob.x, ob.angle); break;
+      case 'stack':   result = buildStack(ob.x, ob.count); break;
+      case 'spinner': result = buildSpinner(ob.x); break;
+      case 'seesaw': {
+        const sw = buildSeesaw(ob.x, ob.len);
+        for (const b of sw.bodies) bodies.push(b);
+        // de pivot-constraint als los body toevoegen
+        bodies.push(sw.constraint);
+        gameState.seesaws.push(sw.plank);
+        result = null;
+        break;
+      }
+      default: result = [];
+    }
+    if (result) {
+      for (const b of result) {
+        bodies.push(b);
+        if (b.label === 'spinner') gameState.spinners.push(b);
+      }
+    }
+  }
+
+  // start-platform extra zekerstellen
+  const startPad = Bodies.rectangle(40, GROUND_Y + 40, 120, 80,
+    { isStatic:true, friction:0.8, label:'ground' });
+  startPad.renderType = 'flat';
+  bodies.push(startPad);
+  // eind-platform onder de finish zekerstellen
+  const endPad = Bodies.rectangle(SPAWN_X + lvl.length + 60, GROUND_Y + 40, 200, 80,
+    { isStatic:true, friction:0.8, label:'ground' });
+  endPad.renderType = 'flat';
+  bodies.push(endPad);
+  return bodies;
+}
+
+/* ============================================================
+   DRIVE-FASE
+   ============================================================ */
+let driveStarted = false;
+
+function enterDrive() {
+  gameState.driveAttempt++;             // FASE 6: tel deze rit-poging
+  markPartsUsed(gameState.placed);      // FASE 6: "Verzamelaar"-tracking
+  engine = Engine.create();
+  engine.gravity.y = 1.0;
+  const lvl = LEVELS[gameState.levelIndex];
+
+  const levelBodies = buildLevelBodies(lvl);
+  Composite.add(engine.world, levelBodies);
+  gameState.levelBodies = levelBodies;
+
+  const veh = buildToPhysics();
+  gameState.vehicle = veh;
+  Composite.add(engine.world, veh.composite);
+
+  gameState.camera.x = veh.chassis.position.x;
+  gameState.camera.y = veh.chassis.position.y;
+  gameState.cameraTarget.x = veh.chassis.position.x;
+  gameState.cameraTarget.y = veh.chassis.position.y;
+
+  gameState.timer = 0;
+  gameState.crashTimer = 0;
+  gameState.finished = false;
+  gameState.input.gas = false;
+  gameState.input.brake = false;
+  gameState.result = null;
+  driveStarted = true;
+
+  document.getElementById('drivePar').textContent =
+    '\u{1F3AF} Par ' + lvl.parTime + 's';
+  document.getElementById('driveTouch').style.display = isTouch ? 'flex' : 'none';
+  document.getElementById('driveHint').style.display = isTouch ? 'none' : 'block';
+
+  // Fase 4 juice — drive-start: engine-rev sfx + witte screen-flash.
+  sfx.play('drive-start');
+  sfx.engineStart();
+  triggerFlash(0.8);
+  bindDriveCollisions();
+}
+
+/* ---------- Fase 4: collision-events voor physics-juice ---------- */
+let _mudCooldown = 0, _bumpCooldown = 0;
+function bindDriveCollisions() {
+  if (!engine) return;
+  Matter.Events.on(engine, 'collisionStart', (ev) => {
+    const veh = gameState.vehicle;
+    if (!veh) return;
+    const vehBodies = [veh.chassis];
+    for (const w of veh.wheels) vehBodies.push(w.body);
+    for (const pair of ev.pairs) {
+      const a = pair.bodyA, b = pair.bodyB;
+      const va = vehBodies.indexOf(a) >= 0, vb = vehBodies.indexOf(b) >= 0;
+      if (!va && !vb) continue;
+      const other = va ? b : a;
+      const vehBody = va ? a : b;
+      const cp = (pair.collision && pair.collision.supports
+        && pair.collision.supports[0]) || vehBody.position;
+      if (other.label === 'mud' && _mudCooldown <= 0) {
+        sfx.play('mud-splash');
+        burstMud(cp.x, cp.y);
+        _mudCooldown = 0.25;
+      }
+      // rubber-stack-blok = stuiter -> bumper-boing + ring-particle
+      if (other.label === 'rubber' && _bumpCooldown <= 0) {
+        sfx.play('bumper-hit');
+        ringParticle(cp.x, cp.y, PAL.warnLight);
+        _bumpCooldown = 0.2;
+      }
+    }
+  });
+}
+
+function exitDriveCleanup() {
+  driveStarted = false;
+  sfx.engineStop();                 // Fase 4: engine-loop afsluiten
+  if (engine) {
+    Matter.Events.off(engine);      // collision-listeners loskoppelen
+    World.clear(engine.world, false);
+    Engine.clear(engine);
+    engine = null;
+  }
+  gameState.vehicle = null;
+  gameState.levelBodies = null;
+  gameState.spinners = [];
+  gameState.seesaws = [];
+  _mudCooldown = 0; _bumpCooldown = 0;
+}
+
+/* ---------- Input: keyboard ---------- */
+window.addEventListener('keydown', (e) => {
+  if (gameState.state === 'drive') {
+    if (e.key === 'ArrowRight') gameState.input.gas = true;
+    if (e.key === 'ArrowLeft')  gameState.input.brake = true;
+    if (e.key === 'r' || e.key === 'R') restartDrive();
+    if (e.key === 'Escape') { exitDriveCleanup(); setState('build'); }
+  }
+});
+window.addEventListener('keyup', (e) => {
+  if (gameState.state === 'drive') {
+    if (e.key === 'ArrowRight') gameState.input.gas = false;
+    if (e.key === 'ArrowLeft')  gameState.input.brake = false;
+  }
+});
+
+/* ---------- Input: touch buttons ---------- */
+function bindHold(el, onDown, onUp) {
+  el.addEventListener('pointerdown', (e) => { e.preventDefault(); onDown(); });
+  el.addEventListener('pointerup',   (e) => { e.preventDefault(); onUp(); });
+  el.addEventListener('pointerleave',(e) => { onUp(); });
+  el.addEventListener('pointercancel',(e)=> { onUp(); });
+}
+bindHold(document.getElementById('btnGas'),
+  () => { gameState.input.gas = true;  haptic(15); },
+  () => { gameState.input.gas = false; });
+bindHold(document.getElementById('btnBrake'),
+  () => { gameState.input.brake = true; haptic(15); },
+  () => { gameState.input.brake = false; });
+
+function haptic(ms) { if (navigator.vibrate) try { navigator.vibrate(ms); } catch(e){} }
+
+function restartDrive() {
+  exitDriveCleanup();
+  enterDrive();
+}
+
+/* ---------- Drive physics-step ---------- */
+function driveUpdate(dt) {
+  const veh = gameState.vehicle;
+  if (!veh) return;
+  const lvl = LEVELS[gameState.levelIndex];
+
+  // Motor: torque op de wielen bij gas.
+  if (gameState.input.gas && veh.motorTorque > 0) {
+    for (const w of veh.wheels) {
+      w.body.torque += veh.motorTorque * 1000;
+    }
+  }
+  // Brake: tijdelijke friction-multiplier + angular damping.
+  for (const w of veh.wheels) {
+    if (gameState.input.brake) {
+      w.body.friction = w.baseFriction * 2.0;
+      Body.setAngularVelocity(w.body, w.body.angularVelocity * 0.85);
+    } else {
+      w.body.friction = w.baseFriction;
+    }
+  }
+  // Ballon-lift: constante opwaartse kracht per ballon (GDD §4 noot).
+  for (const off of veh.liftOffsets) {
+    const wp = {
+      x: veh.chassis.position.x + off.dx,
+      y: veh.chassis.position.y + off.dy,
+    };
+    Body.applyForce(veh.chassis, wp, { x:0, y:-off.lift });
+  }
+
+  // Spinners draaien: static body handmatig roteren rond zijn centrum.
+  // (B-02: setAngularVelocity verwijderd - heeft geen integratie-effect
+  // op een static body; Body.rotate voert de feitelijke rotatie uit.)
+  for (const sp of gameState.spinners) {
+    Body.rotate(sp, sp.spinSpeed);
+  }
+
+  // Engine-stap met fixed timestep (GDD §3.3: 60fps fixed).
+  Engine.update(engine, 1000/60);
+
+  gameState.timer += dt;
+
+  // Fase 4: engine-loop pitch volgt de horizontale snelheid.
+  sfx.engineUpdate(Math.abs(veh.chassis.velocity.x));
+  if (_mudCooldown > 0) _mudCooldown -= dt;
+  if (_bumpCooldown > 0) _bumpCooldown -= dt;
+
+  // Camera-target = chassis + lookahead in rij-richting.
+  const lookahead = 80;
+  gameState.cameraTarget.x = veh.chassis.position.x + lookahead;
+  gameState.cameraTarget.y = veh.chassis.position.y;
+
+  // Crash-detect: chassis bijna omgekeerd gedurende 1.5s.
+  let a = veh.chassis.angle % (Math.PI*2);
+  if (a > Math.PI) a -= Math.PI*2;
+  if (a < -Math.PI) a += Math.PI*2;
+  const upsideDown = Math.abs(a) > Math.PI * 0.9;
+  if (upsideDown) gameState.crashTimer += dt;
+  else gameState.crashTimer = Math.max(0, gameState.crashTimer - dt*0.5);
+
+  // valt van de wereld af (in een gap gevallen)
+  const fellOff = veh.chassis.position.y > GROUND_Y + 220;
+
+  if ((gameState.crashTimer >= 1.5 || fellOff) && !gameState.finished) {
+    gameState.finished = true;
+    finishRun('crash');
+    return;
+  }
+  // Finish-detect: chassis.x voorbij level.length.
+  const finishX = SPAWN_X + lvl.length;
+  if (veh.chassis.position.x > finishX && !gameState.finished) {
+    gameState.finished = true;
+    finishRun('finish');
+    return;
+  }
+  // Soft-fail: par-tijd x 2 verstreken. Dit is GEEN crash (voertuig is heel),
+  // het was alleen te langzaam -> eigen 'timeout'-uitkomst (BUG-4).
+  if (gameState.timer > lvl.parTime * 2 && !gameState.finished) {
+    gameState.finished = true;
+    finishRun('timeout');
+  }
+}
+
+/* ---------- Sterren-calc (GDD 3.6) ---------- */
+function calcStars(time, crashed) {
+  const lvl = LEVELS[gameState.levelIndex];
+  if (crashed) return 0;
+  let stars = 1; // Ster 1: voltooid
+  if (time <= lvl.parTime) stars = 2; // Ster 2: snel
+  const economical = lvl.threeStarBudget != null
+    ? gameState.budgetUsed <= lvl.threeStarBudget
+    : gameState.budgetUsed < lvl.budgetMax * 0.5;
+  const fastTarget = lvl.threeStarTime != null
+    ? lvl.threeStarTime : lvl.parTime * 0.7;
+  const veryFast = time <= fastTarget;
+  if (stars >= 2 && (economical || veryFast)) stars = 3;
+  return stars;
+}
+
+// outcome: 'finish' | 'crash' | 'timeout'.
+// 'crash'   = voertuig gekanteld of in een gat gevallen -> crash-presentatie.
+// 'timeout' = soft-fail, voertuig is heel maar te traag -> rustige presentatie,
+//             geen crash-sfx/shake/sparks (BUG-4, GDD 3.2 "geen straf").
+// 'finish'  = level voltooid -> confetti + sterren.
+function finishRun(outcome) {
+  // Backwards-compat: een bool true betekende vroeger 'crash'.
+  if (outcome === true)  outcome = 'crash';
+  if (outcome === false) outcome = 'finish';
+  const failed = (outcome !== 'finish'); // crash en timeout -> 0 sterren
+  const crashed = (outcome === 'crash');
+  const stars = calcStars(gameState.timer, failed);
+  const lvl = LEVELS[gameState.levelIndex];
+
+  // Fase 4 juice — feedback op het moment van resolve.
+  sfx.engineStop();
+  const fveh = gameState.vehicle;
+  if (crashed) {
+    sfx.play('crash');
+    addShake(6, 250);               // ~250ms shake, amplitude ~6px (TODO-spec)
+    if (fveh) {
+      burstSparks(fveh.chassis.position.x, fveh.chassis.position.y);
+      for (const w of fveh.wheels)
+        burstSparks(w.body.position.x, w.body.position.y);
+    }
+    haptic(60);
+  } else if (outcome === 'timeout') {
+    // Geen crash-effecten: het voertuig is heel, het was alleen te langzaam.
+    // Rustige, neutrale "tijd op"-toon (geen noise, geen shake, geen sparks).
+    sfx.play('timeout');
+  } else {
+    sfx.play('finish');
+    if (fveh) {
+      const fs = worldToScreen(fveh.chassis.position.x,
+        fveh.chassis.position.y - 40);
+      burstConfetti(fs.x, fs.y);
+    } else {
+      burstConfetti(VW / 2, VH * 0.4);
+    }
+  }
+  const prevStars = gameState.progress.levelStars[lvl.id] || 0;
+  const wasCompleted = prevStars >= 1;
+
+  let unlocked = [];
+  if (stars > prevStars) {
+    gameState.progress.levelStars[lvl.id] = stars;
+  }
+  if (stars >= 1 && !wasCompleted) {
+    for (const pid of (lvl.unlocks || [])) {
+      if (!gameState.unlockedParts.has(pid)) {
+        gameState.unlockedParts.add(pid);
+        unlocked.push(pid);
+      }
+    }
+  }
+  if (stars > prevStars || (stars >= 1 && !wasCompleted)) {
+    saveProgress();
+  }
+  saveLastDesign(lvl.id);
+
+  // FASE 6 — run-specifieke prestatie-vlaggen + evaluatie.
+  if (outcome === 'finish') {
+    if (gameState.timer <= lvl.parTime * 0.6) achState.speedrunDone = true;
+    if (gameState.driveAttempt <= 1) achState.noRebuildFinish = true;
+  }
+  checkAchievements();
+
+  gameState.result = { stars, time:gameState.timer, crashed, outcome, unlocked };
+  setState('result');
+}
+
+
+/* ============================================================
+   RESULT-MODAL
+   ============================================================ */
+function showResult() {
+  const r = gameState.result;
+  const lvl = LEVELS[gameState.levelIndex];
+  // Drie uitkomst-typen (BUG-4): finish / crash / timeout. De timeout is
+  // geen crash — voertuig is heel, het was alleen te traag -> rustigere tekst.
+  const outcome = r.outcome || (r.crashed ? 'crash' : 'finish');
+  document.getElementById('resTitle').textContent =
+    outcome === 'crash'   ? 'Bouw beter!' :
+    outcome === 'timeout' ? 'Tijd op!'    : 'Finish!';
+  document.getElementById('resInfo').textContent =
+    'Tijd: ' + r.time.toFixed(1) + 's  |  Budget: '
+    + gameState.budgetUsed + '/' + lvl.budgetMax
+    + (outcome === 'crash'   ? '  |  Gecrasht' :
+       outcome === 'timeout' ? '  |  Te langzaam — bouw sneller' : '');
+  const unEl = document.getElementById('resUnlock');
+  if (r.unlocked && r.unlocked.length) {
+    const names = r.unlocked.map(id => PART_BY_ID[id].name).join(', ');
+    unEl.textContent = 'Nieuw onderdeel: ' + names;
+  } else {
+    unEl.textContent = '';
+  }
+  document.getElementById('btnNext').style.display =
+    (gameState.levelIndex < LEVELS.length - 1) ? '' : 'none';
+
+  // sterren een voor een onthullen - canvas-iconen met pop (art-bible 9)
+  const sc = document.getElementById('resStarsCanvas');
+  const sctx = sc.getContext('2d');
+  const R = 30, gap = R * 2 + R * 0.4, cy = sc.height / 2;
+  const cx0 = sc.width / 2 - gap;
+  function easeOutBack(t) {
+    const c1 = 1.70158, c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  }
+  const startT = performance.now();
+  let raf = 0;
+  // Fase 4: per ster een oplopende toon + pop-particle bij onthulling.
+  const starSfxFired = [false, false, false];
+  function fireStarJuice(i) {
+    if (starSfxFired[i]) return;
+    starSfxFired[i] = true;
+    sfx.play('star-reveal-' + (i + 1));
+    const srect = sc.getBoundingClientRect();
+    starPop(srect.left + ((cx0 + i * gap) / sc.width) * srect.width,
+            srect.top + (cy / sc.height) * srect.height);
+  }
+  function drawStars(now) {
+    sctx.clearRect(0, 0, sc.width, sc.height);
+    for (let i = 0; i < 3; i++) {
+      const cx = cx0 + i * gap;
+      const filled = i < r.stars;
+      const delay = filled ? i * 200 : 0;
+      if (filled && now - startT >= delay) fireStarJuice(i);
+      const t = filled ? Math.min(1, Math.max(0, (now - startT - delay) / 260)) : 1;
+      if (filled && t <= 0) { drawStar(sctx, cx, cy, R, false); continue; }
+      const scl = filled ? (0.001 + 1.3 * easeOutBack(t)) / 1.3 : 1;
+      if (filled && t < 1) {
+        sctx.save();
+        sctx.globalAlpha = 0.8 * (1 - t);
+        sctx.strokeStyle = PAL.accentLight; sctx.lineWidth = 3;
+        sctx.beginPath();
+        sctx.arc(cx, cy, 4 + t * 24, 0, Math.PI * 2);
+        sctx.stroke();
+        sctx.restore();
+      }
+      sctx.save();
+      sctx.translate(cx, cy); sctx.scale(scl, scl); sctx.translate(-cx, -cy);
+      drawStar(sctx, cx, cy, R, filled);
+      sctx.restore();
+    }
+    if (now - startT < 260 + 400 && gameState.state === 'result') {
+      raf = requestAnimationFrame(drawStars);
+    }
+  }
+  cancelAnimationFrame(raf);
+  drawStars(performance.now());
+}
+
+document.getElementById('btnRetry').addEventListener('click', () => {
+  exitDriveCleanup();
+  setState('drive');
+});
+document.getElementById('btnNext').addEventListener('click', () => {
+  exitDriveCleanup();
+  if (gameState.levelIndex < LEVELS.length - 1) {
+    gameState.levelIndex++;
+    setState('build');
+  } else {
+    setState('levelSelect');
+  }
+});
+document.getElementById('btnToLevels').addEventListener('click', () => {
+  exitDriveCleanup();
+  setState('levelSelect');
+});
+
+/* ============================================================
+   SCREEN-NAV BUTTONS
+   ============================================================ */
+document.getElementById('btnPlay').addEventListener('click', () => {
+  let idx = 0;
+  for (let i = 0; i < LEVELS.length; i++) {
+    if (levelUnlocked(i)) idx = i;
+    if (!levelCompleted(LEVELS[i].id)) { idx = i; break; }
+  }
+  gameState.levelIndex = idx;
+  setState('build');
+});
+document.getElementById('btnLevels').addEventListener('click', () => setState('levelSelect'));
+document.getElementById('btnBackTitle').addEventListener('click', () => setState('title'));
+document.getElementById('btnBuildBack').addEventListener('click', () => {
+  saveLastDesign(LEVELS[gameState.levelIndex].id);
+  setState('levelSelect');
+});
+document.getElementById('btnStart').addEventListener('click', () => {
+  if (validateBuild().ok) {
+    saveLastDesign(LEVELS[gameState.levelIndex].id);
+    setState('drive');
+  }
+});
+document.getElementById('btnDriveRestart').addEventListener('click', restartDrive);
+document.getElementById('btnDriveExit').addEventListener('click', () => {
+  exitDriveCleanup(); setState('build');
+});
+
+/* ---------- FASE 6: achievements- en share-knoppen ---------- */
+document.getElementById('btnAchievements').addEventListener('click',
+  () => setState('achievements'));
+document.getElementById('btnLvlAchievements').addEventListener('click',
+  () => setState('achievements'));
+document.getElementById('btnAchBack').addEventListener('click',
+  () => setState('title'));
+document.getElementById('btnShareTitle').addEventListener('click',
+  () => shareGame('titleShareNote'));
+document.getElementById('btnShareResult').addEventListener('click',
+  () => shareGame('resShareNote'));
+
+
+/* ============================================================
+   FASE 4 — AUDIO-ENGINE (Web Audio API, volledig gesynthetiseerd)
+   ============================================================
+   Single-file constraint: GEEN externe OGG/MP3-bestanden. Alle SFX
+   worden live gesynthetiseerd met oscillators, noise-buffers en
+   gain/filter-envelopes. Audio start pas na de eerste user-gesture
+   (browser autoplay-policy). Mute-state persist in localStorage.
+   ============================================================ */
+const LS_SETTINGS = 'buildmad.v1.settings';
+
+const sfx = (function() {
+  let actx = null;
+  let master = null;
+  let sfxBus = null;
+  let musicBus = null;
+  let muted = false;
+  let noiseBuf = null;
+  let engineNode = null;
+  let musicTimer = null;
+  let musicTrack = null;
+
+  try {
+    const raw = localStorage.getItem(LS_SETTINGS);
+    if (raw) { const s = JSON.parse(raw); muted = !!s.muted; }
+  } catch (e) { /* corrupt: default niet-gemute */ }
+  function saveSettings() {
+    try { localStorage.setItem(LS_SETTINGS, JSON.stringify({ muted: muted })); }
+    catch (e) { /* niet fataal */ }
+  }
+
+  function ensureCtx() {
+    if (actx) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    actx = new AC();
+    master = actx.createGain();
+    master.gain.value = muted ? 0 : 1;
+    master.connect(actx.destination);
+    sfxBus = actx.createGain();   sfxBus.gain.value = 0.9;  sfxBus.connect(master);
+    musicBus = actx.createGain(); musicBus.gain.value = 0.0; musicBus.connect(master);
+    const len = actx.sampleRate;
+    noiseBuf = actx.createBuffer(1, len, actx.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  }
+
+  function unlock() {
+    ensureCtx();
+    if (actx && actx.state === 'suspended') actx.resume();
+  }
+
+  function now() { return actx ? actx.currentTime : 0; }
+
+  function tone(freq, dur, opts) {
+    if (!actx || muted) return;
+    opts = opts || {};
+    const t0 = now() + (opts.delay || 0);
+    const osc = actx.createOscillator();
+    osc.type = opts.type || 'square';
+    osc.frequency.setValueAtTime(freq, t0);
+    if (opts.glide != null)
+      osc.frequency.exponentialRampToValueAtTime(Math.max(1, opts.glide), t0 + dur);
+    const g = actx.createGain();
+    const peak = (opts.gain != null ? opts.gain : 0.3);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(peak, t0 + Math.min(0.02, dur * 0.3));
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(g);
+    if (opts.filter) {
+      const f = actx.createBiquadFilter();
+      f.type = opts.filter; f.frequency.value = opts.filterFreq || 1200;
+      g.connect(f); f.connect(opts.bus || sfxBus);
+    } else {
+      g.connect(opts.bus || sfxBus);
+    }
+    osc.start(t0); osc.stop(t0 + dur + 0.02);
+  }
+
+  function noise(dur, opts) {
+    if (!actx || muted) return;
+    opts = opts || {};
+    const t0 = now() + (opts.delay || 0);
+    const src = actx.createBufferSource();
+    src.buffer = noiseBuf; src.loop = true;
+    const g = actx.createGain();
+    const peak = (opts.gain != null ? opts.gain : 0.3);
+    g.gain.setValueAtTime(peak, t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    const f = actx.createBiquadFilter();
+    f.type = opts.filter || 'bandpass';
+    f.frequency.setValueAtTime(opts.freq || 800, t0);
+    if (opts.freqEnd != null)
+      f.frequency.exponentialRampToValueAtTime(Math.max(40, opts.freqEnd), t0 + dur);
+    f.Q.value = opts.q || 1;
+    src.connect(f); f.connect(g); g.connect(opts.bus || sfxBus);
+    src.start(t0); src.stop(t0 + dur + 0.02);
+  }
+
+  const RECIPES = {
+    'part-place': function() {
+      tone(660, 0.07, { type:'square', gain:0.22 });
+      tone(990, 0.10, { type:'square', gain:0.16, delay:0.03 });
+    },
+    'part-remove': function() {
+      noise(0.22, { filter:'bandpass', freq:1600, freqEnd:300, q:0.8, gain:0.22 });
+    },
+    'drive-start': function() {
+      tone(70, 0.7, { type:'sawtooth', glide:240, gain:0.30, filter:'lowpass', filterFreq:900 });
+      tone(140, 0.7, { type:'square', glide:480, gain:0.12, filter:'lowpass', filterFreq:1400 });
+    },
+    'crash': function() {
+      const v = Math.floor(Math.random() * 3);
+      const base = [180, 150, 220][v];
+      noise(0.32, { filter:'bandpass', freq:2400, freqEnd:600, q:1.4, gain:0.34 });
+      tone(base, 0.28, { type:'square', glide:base * 0.4, gain:0.26, filter:'lowpass', filterFreq:1800 });
+      tone(base * 2.7, 0.16, { type:'square', gain:0.14, delay:0.02 });
+      noise(0.5, { filter:'lowpass', freq:400, gain:0.18, delay:0.04 });
+    },
+    'finish': function() {
+      const seq = [523, 659, 784, 1047];
+      seq.forEach(function(f, i) {
+        tone(f, 0.26, { type:'triangle', gain:0.28, delay:i * 0.13 });
+        tone(f * 2, 0.18, { type:'square', gain:0.07, delay:i * 0.13 });
+      });
+      tone(1047, 0.5, { type:'triangle', gain:0.22, delay:0.55 });
+    },
+    // Soft-fail "tijd op" — bewust neutraal, geen straf-geluid (BUG-4 / GDD 3.2).
+    'timeout': function() {
+      tone(440, 0.22, { type:'sine', gain:0.20 });
+      tone(330, 0.30, { type:'sine', gain:0.18, delay:0.16 });
+    },
+    'star-reveal-1': function() { tone(659, 0.22, { type:'triangle', gain:0.30 }); },
+    'star-reveal-2': function() { tone(784, 0.22, { type:'triangle', gain:0.30 }); },
+    'star-reveal-3': function() {
+      tone(988, 0.30, { type:'triangle', gain:0.32 });
+      tone(1318, 0.22, { type:'square', gain:0.10, delay:0.04 });
+    },
+    'mud-splash': function() {
+      noise(0.24, { filter:'lowpass', freq:700, freqEnd:120, q:0.5, gain:0.26 });
+      tone(110, 0.18, { type:'sine', glide:55, gain:0.14 });
+    },
+    'bumper-hit': function() {
+      tone(180, 0.30, { type:'sine', glide:520, gain:0.30 });
+      tone(360, 0.18, { type:'sine', glide:900, gain:0.12, delay:0.02 });
+    },
+    'ui-hover': function() { tone(880, 0.05, { type:'square', gain:0.07 }); },
+    'ui-click': function() {
+      tone(523, 0.06, { type:'square', gain:0.16 });
+      tone(784, 0.07, { type:'square', gain:0.12, delay:0.025 });
+    },
+  };
+
+  function play(name) {
+    ensureCtx();
+    if (!actx || muted) return;
+    const r = RECIPES[name];
+    if (r) r();
+  }
+
+  function engineStart() {
+    ensureCtx();
+    if (!actx || engineNode) return;
+    const t0 = now();
+    const sub = actx.createOscillator();
+    sub.type = 'sawtooth'; sub.frequency.value = 60;
+    const osc = actx.createOscillator();
+    osc.type = 'square'; osc.frequency.value = 120;
+    const filter = actx.createBiquadFilter();
+    filter.type = 'lowpass'; filter.frequency.value = 700; filter.Q.value = 4;
+    const gain = actx.createGain();
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(0.16, t0 + 0.12);
+    sub.connect(filter); osc.connect(filter); filter.connect(gain);
+    gain.connect(sfxBus);
+    sub.start(t0); osc.start(t0);
+    engineNode = { sub: sub, osc: osc, filter: filter, gain: gain };
+  }
+  function engineUpdate(speed) {
+    if (!engineNode || !actx) return;
+    const rate = Math.max(0.7, Math.min(1.6, 0.7 + speed / 9));
+    const t = now();
+    engineNode.sub.frequency.setTargetAtTime(60 * rate, t, 0.05);
+    engineNode.osc.frequency.setTargetAtTime(120 * rate, t, 0.05);
+    engineNode.filter.frequency.setTargetAtTime(500 + rate * 700, t, 0.08);
+    const load = (gameState.input && gameState.input.gas) ? 0.20 : 0.11;
+    engineNode.gain.gain.setTargetAtTime(load, t, 0.1);
+  }
+  function engineStop() {
+    if (!engineNode || !actx) return;
+    const t = now();
+    engineNode.gain.gain.setTargetAtTime(0.0001, t, 0.08);
+    const n = engineNode;
+    setTimeout(function() {
+      try { n.sub.stop(); n.osc.stop(); } catch (e) {}
+    }, 250);
+    engineNode = null;
+  }
+
+  const MUSIC = {
+    build: { notes:[262, 330, 392, 330], step:0.5,  type:'triangle' },
+    drive: { notes:[196, 294, 392, 294, 247, 330], step:0.32, type:'square' },
+  };
+  function musicPlay(track) {
+    ensureCtx();
+    if (!actx) return;
+    if (musicTrack === track) return;
+    musicTrack = track;
+    if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
+    const cfg = MUSIC[track];
+    if (!cfg) { musicBus.gain.setTargetAtTime(0, now(), 0.1); return; }
+    musicBus.gain.cancelScheduledValues(now());
+    musicBus.gain.setTargetAtTime(muted ? 0 : 0.16, now(), 0.12);
+    let i = 0;
+    const tick = function() {
+      if (!actx || muted) return;
+      const f = cfg.notes[i % cfg.notes.length];
+      i++;
+      const t0 = now();
+      const osc = actx.createOscillator();
+      osc.type = cfg.type;
+      osc.frequency.value = f;
+      const g = actx.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.5, t0 + 0.04);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + cfg.step * 0.9);
+      osc.connect(g); g.connect(musicBus);
+      osc.start(t0); osc.stop(t0 + cfg.step);
+    };
+    tick();
+    musicTimer = setInterval(tick, cfg.step * 1000);
+  }
+  function musicStop() {
+    musicTrack = null;
+    if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
+    if (musicBus && actx) musicBus.gain.setTargetAtTime(0, now(), 0.1);
+  }
+
+  function setMuted(m) {
+    muted = m;
+    saveSettings();
+    if (master && actx)
+      master.gain.setTargetAtTime(muted ? 0 : 1, now(), 0.05);
+  }
+  function toggle() { setMuted(!muted); return muted; }
+  function isMuted() { return muted; }
+
+  return { unlock: unlock, play: play,
+    engineStart: engineStart, engineUpdate: engineUpdate, engineStop: engineStop,
+    musicPlay: musicPlay, musicStop: musicStop,
+    toggle: toggle, isMuted: isMuted, setMuted: setMuted };
+})();
+
+function refreshMuteButtons() {
+  const m = sfx.isMuted();
+  const tb = document.getElementById('btnMuteTitle');
+  if (tb) tb.innerHTML = m ? '\u{1F507} Geluid: uit' : '\u{1F50A} Geluid: aan';
+  ['btnMuteBuild', 'btnMuteDrive'].forEach(function(id) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = m ? '\u{1F507}' : '\u{1F50A}';
+  });
+}
+function toggleMute() { sfx.toggle(); refreshMuteButtons(); }
+['btnMuteTitle', 'btnMuteBuild', 'btnMuteDrive'].forEach(function(id) {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('click', function(e) { e.stopPropagation(); toggleMute(); });
+});
+refreshMuteButtons();
+
+function primeAudio() {
+  sfx.unlock();
+  window.removeEventListener('pointerdown', primeAudio);
+  window.removeEventListener('keydown', primeAudio);
+}
+window.addEventListener('pointerdown', primeAudio);
+window.addEventListener('keydown', primeAudio);
+
+document.querySelectorAll('button').forEach(function(btn) {
+  btn.addEventListener('pointerenter', function() {
+    if (!btn.disabled) sfx.play('ui-hover');
+  });
+  btn.addEventListener('click', function() {
+    if (!btn.disabled) {
+      sfx.play('ui-click');
+      btn.classList.add('flash');
+      setTimeout(function() { btn.classList.remove('flash'); }, 130);
+    }
+  });
+});
+
+/* ============================================================
+   FASE 4 — PARTICLE-SYSTEEM (pool-based, geen garbage in de loop)
+   ============================================================ */
+const MAX_PARTICLES = 240;
+const particles = [];
+for (let _pi = 0; _pi < MAX_PARTICLES; _pi++) {
+  particles.push({ alive:false, x:0, y:0, vx:0, vy:0, life:0, maxLife:1,
+    size:4, color:'#fff', gravity:0, shape:'dot', spin:0, rot:0,
+    space:'world', drag:1 });
+}
+function spawnParticle(cfg) {
+  for (let i = 0; i < MAX_PARTICLES; i++) {
+    const p = particles[i];
+    if (p.alive) continue;
+    p.alive = true;
+    p.x = cfg.x; p.y = cfg.y;
+    p.vx = cfg.vx || 0; p.vy = cfg.vy || 0;
+    p.life = 0; p.maxLife = cfg.maxLife || 0.6;
+    p.size = cfg.size || 4;
+    p.color = cfg.color || '#fff';
+    p.gravity = cfg.gravity || 0;
+    p.shape = cfg.shape || 'dot';
+    p.spin = cfg.spin || 0; p.rot = cfg.rot || 0;
+    p.space = cfg.space || 'world';
+    p.drag = cfg.drag != null ? cfg.drag : 1;
+    return;
+  }
+  let best = -1, bestLife = -1;
+  for (let i = 0; i < MAX_PARTICLES; i++)
+    if (particles[i].life > bestLife) { bestLife = particles[i].life; best = i; }
+  if (best >= 0) { particles[best].alive = false; spawnParticle(cfg); }
+}
+function updateParticles(dt) {
+  for (let i = 0; i < MAX_PARTICLES; i++) {
+    const p = particles[i];
+    if (!p.alive) continue;
+    p.life += dt;
+    if (p.life >= p.maxLife) { p.alive = false; continue; }
+    p.vy += p.gravity * dt;
+    p.vx *= Math.pow(p.drag, dt * 60);
+    p.vy *= Math.pow(p.drag, dt * 60);
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.rot += p.spin * dt;
+  }
+}
+function renderParticles(inWorld) {
+  for (let i = 0; i < MAX_PARTICLES; i++) {
+    const p = particles[i];
+    if (!p.alive) continue;
+    if (inWorld && p.space !== 'world') continue;
+    if (!inWorld && p.space !== 'screen') continue;
+    const t = p.life / p.maxLife;
+    let sx, sy;
+    if (inWorld) { const s = worldToScreen(p.x, p.y); sx = s.x; sy = s.y; }
+    else { sx = p.x; sy = p.y; }
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, 1 - t);
+    if (p.shape === 'ring') {
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = Math.max(1, p.size * (1 - t));
+      ctx.beginPath();
+      ctx.arc(sx, sy, p.size * (0.5 + t * 2.2), 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (p.shape === 'spark') {
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = Math.max(1, p.size * 0.5);
+      ctx.lineCap = 'round';
+      const len = p.size * (1.4 + t);
+      const ang = Math.atan2(p.vy, p.vx);
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(sx - Math.cos(ang) * len, sy - Math.sin(ang) * len);
+      ctx.stroke();
+    } else if (p.shape === 'rect') {
+      ctx.translate(sx, sy); ctx.rotate(p.rot);
+      ctx.fillStyle = p.color;
+      const sz = p.size * (1 - t * 0.3);
+      ctx.fillRect(-sz / 2, -sz / 2, sz, sz * 0.7);
+    } else {
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(sx, sy, Math.max(0.5, p.size * (1 - t * 0.6)), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
+function burstPuff(x, y, space) {
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + Math.random() * 0.4;
+    const sp = 30 + Math.random() * 50;
+    spawnParticle({ x:x, y:y, vx:Math.cos(a) * sp, vy:Math.sin(a) * sp - 20,
+      maxLife:0.45, size:5 + Math.random() * 4, color:PAL.partLight,
+      gravity:60, shape:'dot', space:space || 'screen', drag:0.92 });
+  }
+}
+function burstSparks(x, y) {
+  for (let i = 0; i < 16; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = 120 + Math.random() * 240;
+    spawnParticle({ x:x, y:y, vx:Math.cos(a) * sp, vy:Math.sin(a) * sp - 60,
+      maxLife:0.4 + Math.random() * 0.3, size:5 + Math.random() * 4,
+      color:Math.random() < 0.5 ? PAL.accent : PAL.warnLight,
+      gravity:420, shape:'spark', space:'world', drag:0.96 });
+  }
+}
+function burstConfetti(x, y) {
+  const cols = [PAL.accent, PAL.warn, PAL.validGreen, PAL.partLight,
+    PAL.balloonBody, PAL.white];
+  for (let i = 0; i < 36; i++) {
+    const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4;
+    const sp = 160 + Math.random() * 320;
+    spawnParticle({ x:x + (Math.random() - 0.5) * 80, y:y,
+      vx:Math.cos(a) * sp, vy:Math.sin(a) * sp,
+      maxLife:1.1 + Math.random() * 0.8,
+      size:6 + Math.random() * 5, color:cols[i % cols.length],
+      gravity:300, shape:'rect', spin:(Math.random() - 0.5) * 14,
+      rot:Math.random() * 6, space:'screen', drag:0.985 });
+  }
+}
+function burstMud(x, y) {
+  for (let i = 0; i < 6; i++) {
+    const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.0;
+    const sp = 60 + Math.random() * 120;
+    spawnParticle({ x:x, y:y, vx:Math.cos(a) * sp, vy:Math.sin(a) * sp,
+      maxLife:0.5 + Math.random() * 0.3, size:4 + Math.random() * 5,
+      color:Math.random() < 0.5 ? PAL.mud : '#5a4030',
+      gravity:520, shape:'dot', space:'world', drag:0.97 });
+  }
+}
+function ringParticle(x, y, color) {
+  spawnParticle({ x:x, y:y, vx:0, vy:0, maxLife:0.4, size:14,
+    color:color || PAL.accentLight, shape:'ring', space:'world' });
+}
+function starPop(x, y) {
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2;
+    const sp = 60 + Math.random() * 80;
+    spawnParticle({ x:x, y:y, vx:Math.cos(a) * sp, vy:Math.sin(a) * sp,
+      maxLife:0.5, size:4 + Math.random() * 3, color:PAL.accentLight,
+      gravity:40, shape:'dot', space:'screen', drag:0.93 });
+  }
+}
+
+/* ============================================================
+   FASE 4 — SCREEN-SHAKE (centrale camera/canvas-offset met decay)
+   ============================================================ */
+const shake = { x:0, y:0, mag:0, time:0, dur:0 };
+function addShake(magnitude, durationMs) {
+  shake.mag = Math.max(shake.mag, magnitude);
+  shake.dur = Math.max(shake.dur, (durationMs || 250) / 1000);
+  shake.time = 0;
+}
+function updateShake(dt) {
+  if (shake.dur <= 0) { shake.x = 0; shake.y = 0; return; }
+  shake.time += dt;
+  if (shake.time >= shake.dur) {
+    shake.x = 0; shake.y = 0; shake.mag = 0; shake.dur = 0;
+    return;
+  }
+  const decay = 1 - shake.time / shake.dur;
+  const amp = shake.mag * decay * decay;
+  shake.x = (Math.random() * 2 - 1) * amp;
+  shake.y = (Math.random() * 2 - 1) * amp;
+}
+
+const flash = { alpha:0 };
+function triggerFlash(strength) { flash.alpha = strength || 0.8; }
+function updateFlash(dt) {
+  if (flash.alpha > 0) flash.alpha = Math.max(0, flash.alpha - dt * 9);
+}
+function drawFlash() {
+  if (flash.alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = flash.alpha;
+  ctx.fillStyle = PAL.white;
+  ctx.fillRect(0, 0, VW, VH);
+  ctx.restore();
+}
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+const cssCache = {};
+function getCss(v) {
+  if (cssCache[v]) return cssCache[v];
+  const val = getComputedStyle(document.documentElement)
+    .getPropertyValue(v).trim();
+  cssCache[v] = val;
+  return val;
+}
+
+// Hemel-gradient (art-bible 7.1) - vervangt de vlakke fill.
+function drawSky() {
+  const sky = ctx.createLinearGradient(0, 0, 0, VH);
+  sky.addColorStop(0, PAL.bgSky);
+  sky.addColorStop(1, PAL.bgMid);
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, VW, VH);
+}
+function clearCanvas() {
+  drawSky();
+}
+
+/* ============================================================
+   ART-PASS (FASE 3) - ONDERDEEL-RENDER (drawPart, art-bible 6)
+   ============================================================ */
+function paintPart(c, partId, w, h, dirtSeed) {
+  const rnd = seededRand((dirtSeed || 1) * 2654435761);
+  c.save();
+  c.lineJoin = 'round'; c.lineCap = 'round';
+
+  function scrapDirt(showRust, rustCol) {
+    const nScratch = 2 + Math.floor(rnd() * 3);
+    c.strokeStyle = PAL.inkSoft; c.lineWidth = 2;
+    for (let i = 0; i < nScratch; i++) {
+      const sx = 5 + rnd() * (w - 10), sy = 6 + rnd() * (h - 12);
+      const len = 6 + rnd() * 6, ang = rnd() * Math.PI;
+      c.beginPath();
+      c.moveTo(sx, sy);
+      c.lineTo(sx + Math.cos(ang) * len, sy + Math.sin(ang) * len);
+      c.stroke();
+    }
+    if (showRust && rnd() < 0.55) {
+      c.fillStyle = rustCol || PAL.warnShadow;
+      const rx = 6 + rnd() * (w - 14), ry = h * 0.5 + rnd() * (h * 0.35);
+      c.beginPath();
+      c.ellipse(rx, ry, 3.5 + rnd() * 2, 2.5 + rnd() * 1.5, rnd(), 0, Math.PI * 2);
+      c.fill();
+    }
+  }
+  function bolt(x, y) {
+    c.beginPath(); c.arc(x, y, 2, 0, Math.PI * 2);
+    c.fillStyle = PAL.ink; c.fill();
+  }
+
+  if (partId === 'chassis') {
+    c.beginPath(); c.roundRect(1.5, 1.5, w - 3, h - 3, 4);
+    c.fillStyle = PAL.part; c.fill();
+    c.save(); c.clip();
+    c.fillStyle = PAL.partShadow;
+    c.fillRect(0, h * 0.6, w, h * 0.4);
+    c.fillStyle = PAL.partLight;
+    c.fillRect(0, 1.5, w, h * 0.15);
+    scrapDirt(true);
+    c.restore();
+    bolt(6, 6); bolt(w - 6, 6); bolt(6, h - 6); bolt(w - 6, h - 6);
+    c.beginPath(); c.roundRect(1.5, 1.5, w - 3, h - 3, 4);
+    c.lineWidth = 3; c.strokeStyle = PAL.ink; c.stroke();
+
+  } else if (partId === 'motorBasic' || partId === 'motorTurbo') {
+    c.beginPath(); c.roundRect(3, 7, w - 6, h - 9, 4);
+    c.fillStyle = PAL.motorBody; c.fill();
+    c.save(); c.clip();
+    c.fillStyle = PAL.motorShadow; c.fillRect(0, h * 0.62, w, h);
+    c.restore();
+    c.strokeStyle = PAL.ink; c.lineWidth = 1.5;
+    for (let i = 0; i < 3; i++) {
+      const ry = 13 + i * 5;
+      c.beginPath(); c.moveTo(6, ry); c.lineTo(w - 6, ry); c.stroke();
+    }
+    c.beginPath(); c.arc(w * 0.42, 7, 5.5, Math.PI, Math.PI * 2);
+    c.fillStyle = PAL.hub; c.fill();
+    c.lineWidth = 2; c.strokeStyle = PAL.ink; c.stroke();
+    c.fillStyle = PAL.metalTyre;
+    c.beginPath(); c.roundRect(w - 7, 11, 6, 6, 2); c.fill();
+    c.lineWidth = 2; c.strokeStyle = PAL.ink; c.stroke();
+    bolt(7, h - 7);
+    if (partId === 'motorTurbo') {
+      c.strokeStyle = PAL.warn; c.lineWidth = 2.4;
+      c.beginPath();
+      for (let aa = 0; aa < Math.PI * 3.4; aa += 0.3) {
+        const rr = 1.5 + aa * 1.0;
+        const px = w * 0.5 + Math.cos(aa) * rr, py = h * 0.62 + Math.sin(aa) * rr;
+        aa === 0 ? c.moveTo(px, py) : c.lineTo(px, py);
+      }
+      c.stroke();
+      c.beginPath(); c.arc(w * 0.5 - 4, h * 0.5 - 2, 2.6, 0, Math.PI * 2);
+      c.fillStyle = PAL.accentLight; c.fill();
+    }
+    c.beginPath(); c.roundRect(3, 7, w - 6, h - 9, 4);
+    c.lineWidth = 3; c.strokeStyle = PAL.ink; c.stroke();
+
+  } else if (partId === 'weight') {
+    c.beginPath(); c.roundRect(2, 2, w - 4, h - 4, 2);
+    c.fillStyle = PAL.leadBody; c.fill();
+    c.save(); c.clip();
+    c.fillStyle = PAL.leadShadow; c.fillRect(0, h * 0.5, w, h);
+    c.strokeStyle = PAL.leadEdge; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(4, 5); c.lineTo(w - 4, 5); c.stroke();
+    c.restore();
+    c.fillStyle = PAL.ink;
+    c.font = '800 11px ' + FONT_BODY;
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText('kg', w / 2 + 0.6, h / 2 + 1.4);
+    c.fillStyle = PAL.leadEdge;
+    c.fillText('kg', w / 2, h / 2);
+    c.beginPath(); c.roundRect(2, 2, w - 4, h - 4, 2);
+    c.lineWidth = 3; c.strokeStyle = PAL.ink; c.stroke();
+
+  } else if (partId === 'balloon') {
+    const cx = w / 2, by = h * 0.42, bw = w * 0.42, bh = h * 0.46;
+    c.beginPath();
+    c.ellipse(cx, by, bw, bh, 0, 0, Math.PI * 2);
+    c.fillStyle = PAL.balloonBody; c.fill();
+    c.save();
+    c.beginPath(); c.ellipse(cx, by, bw, bh, 0, 0, Math.PI * 2); c.clip();
+    c.fillStyle = PAL.balloonShadow;
+    c.fillRect(cx - bw, by + bh * 0.15, bw * 2, bh);
+    c.fillStyle = 'rgba(244,236,216,0.8)';
+    c.beginPath();
+    c.ellipse(cx - bw * 0.35, by - bh * 0.4, bw * 0.3, bh * 0.36, -0.5, 0, Math.PI * 2);
+    c.fill();
+    c.restore();
+    c.beginPath(); c.ellipse(cx, by, bw, bh, 0, 0, Math.PI * 2);
+    c.lineWidth = 3; c.strokeStyle = PAL.ink; c.stroke();
+    c.beginPath(); c.moveTo(cx - 3, by + bh);
+    c.lineTo(cx + 3, by + bh); c.lineTo(cx, by + bh + 4);
+    c.closePath(); c.fillStyle = PAL.balloonBody; c.fill();
+    c.lineWidth = 2; c.strokeStyle = PAL.ink; c.stroke();
+    c.beginPath();
+    c.moveTo(cx, by + bh + 4);
+    c.bezierCurveTo(cx - 6, h - 8, cx + 6, h - 4, cx, h - 1);
+    c.stroke();
+
+  } else if (partId === 'bumper') {
+    c.beginPath(); c.roundRect(2, 3, w - 4, h - 6, 8);
+    c.fillStyle = PAL.warn; c.fill();
+    c.save(); c.clip();
+    c.fillStyle = PAL.warnShadow; c.fillRect(0, h * 0.55, w, h);
+    c.fillStyle = PAL.warnLight; c.fillRect(0, 3, w, h * 0.16);
+    c.fillStyle = PAL.metalTyre;
+    for (let i = 1; i <= 4; i++) {
+      const gx = (w / 5) * i;
+      c.fillRect(gx - 1, 6, 2, h - 12);
+    }
+    c.restore();
+    c.beginPath(); c.roundRect(2, 3, w - 4, h - 6, 8);
+    c.lineWidth = 3; c.strokeStyle = PAL.ink; c.stroke();
+
+  } else if (partId === 'spike') {
+    c.beginPath(); c.roundRect(2, h * 0.55, w - 4, h * 0.42, 3);
+    c.fillStyle = PAL.partShadow; c.fill();
+    c.save(); c.beginPath();
+    c.roundRect(2, h * 0.55, w - 4, h * 0.42, 3); c.clip();
+    c.fillStyle = PAL.groundShadow;
+    c.fillRect(0, h * 0.82, w, h);
+    c.restore();
+    c.beginPath(); c.roundRect(2, h * 0.55, w - 4, h * 0.42, 3);
+    c.lineWidth = 3; c.strokeStyle = PAL.ink; c.stroke();
+    for (let i = 0; i < 3; i++) {
+      const nx = w * (0.24 + i * 0.26);
+      c.beginPath();
+      c.moveTo(nx - 5, h * 0.56);
+      c.lineTo(nx, h * 0.2);
+      c.lineTo(nx + 5, h * 0.56);
+      c.fillStyle = PAL.hub; c.fill();
+      c.lineWidth = 3; c.strokeStyle = PAL.ink; c.stroke();
+    }
+    bolt(6, h - 6); bolt(w - 6, h - 6);
+
+  } else {
+    c.beginPath(); c.roundRect(2, 2, w - 4, h - 4, 4);
+    c.fillStyle = PAL.part; c.fill();
+    c.lineWidth = 3; c.strokeStyle = PAL.ink; c.stroke();
+  }
+  c.restore();
+}
+
+// Wiel-render - wielen roteren live. (0,0) = centrum.
+function paintWheel(c, partId, radius) {
+  c.save();
+  c.lineJoin = 'round'; c.lineCap = 'round';
+  if (partId === 'track') {
+    const half = radius;
+    c.beginPath();
+    c.moveTo(-half, -radius);
+    c.lineTo(half, -radius);
+    c.arc(half, 0, radius, -Math.PI / 2, Math.PI / 2);
+    c.lineTo(-half, radius);
+    c.arc(-half, 0, radius, Math.PI / 2, Math.PI * 1.5);
+    c.closePath();
+    c.fillStyle = PAL.metalTyre; c.fill();
+    c.lineWidth = 3; c.strokeStyle = PAL.ink; c.stroke();
+    c.fillStyle = PAL.metalTyreLight;
+    for (let i = 0; i < 10; i++) {
+      const t = (i / 10) * (half * 2);
+      c.fillRect(-half + t, -radius + 1, 4, 3);
+      c.fillRect(-half + t, radius - 4, 4, 3);
+    }
+    for (const tx of [-half, half]) {
+      c.beginPath(); c.arc(tx, 0, radius * 0.45, 0, Math.PI * 2);
+      c.fillStyle = PAL.hub; c.fill();
+      c.lineWidth = 2; c.strokeStyle = PAL.ink; c.stroke();
+      for (let t = 0; t < 8; t++) {
+        const aa = (t / 8) * Math.PI * 2;
+        c.beginPath();
+        c.moveTo(tx + Math.cos(aa) * radius * 0.45, Math.sin(aa) * radius * 0.45);
+        c.lineTo(tx + Math.cos(aa) * radius * 0.6, Math.sin(aa) * radius * 0.6);
+        c.lineWidth = 2; c.stroke();
+      }
+    }
+  } else {
+    const big = radius > 22;
+    c.beginPath(); c.arc(0, 0, radius, 0, Math.PI * 2);
+    c.fillStyle = PAL.metalTyre; c.fill();
+    c.lineWidth = 3; c.strokeStyle = PAL.ink; c.stroke();
+    if (big) {
+      c.fillStyle = PAL.metalTyreLight;
+      for (let i = 0; i < 16; i++) {
+        const aa = (i / 16) * Math.PI * 2;
+        c.save(); c.rotate(aa);
+        c.fillRect(radius - 4, -2, 4, 4);
+        c.restore();
+      }
+    }
+    c.beginPath(); c.arc(0, 0, radius * 0.62, 0, Math.PI * 2);
+    c.lineWidth = 2.4; c.strokeStyle = PAL.accent; c.stroke();
+    const spokes = big ? 5 : 3;
+    const hubR = big ? radius * 0.4 : radius * 0.42;
+    c.strokeStyle = PAL.hub; c.lineWidth = big ? 4 : 3;
+    for (let i = 0; i < spokes; i++) {
+      const aa = (i / spokes) * Math.PI * 2;
+      c.beginPath();
+      c.moveTo(Math.cos(aa) * hubR, Math.sin(aa) * hubR);
+      c.lineTo(Math.cos(aa) * radius * 0.6, Math.sin(aa) * radius * 0.6);
+      c.stroke();
+    }
+    c.beginPath(); c.arc(0, 0, hubR, 0, Math.PI * 2);
+    c.fillStyle = PAL.hub; c.fill();
+    c.lineWidth = 2; c.strokeStyle = PAL.ink; c.stroke();
+  }
+  c.restore();
+}
+
+// Off-screen pre-render cache voor niet-roterende onderdelen (art-bible 4.6).
+const partSprites = {};
+function buildPartSprites() {
+  const pad = 6;
+  for (const part of PARTS) {
+    if (part.role === 'wheel') continue;
+    const w = part.gw * 32, h = part.gh * 32;
+    const cv2 = document.createElement('canvas');
+    cv2.width = (w + pad * 2) * 2;
+    cv2.height = (h + pad * 2) * 2;
+    const c = cv2.getContext('2d');
+    c.scale(2, 2);
+    c.translate(pad, pad);
+    paintPart(c, part.id, w, h, part.gw * 13 + part.gh * 7 + part.cost);
+    partSprites[part.id] = { canvas: cv2, w, h, pad, scale: 2 };
+  }
+}
+
+// Teken een (eventueel) pre-gerenderd onderdeel op schermpx.
+function drawPart(c, partId, x, y, dw, dh, rot, dirtSeed) {
+  const part = PART_BY_ID[partId];
+  if (part && part.role === 'wheel') {
+    c.save();
+    c.translate(x + dw / 2, y + dh / 2);
+    if (rot) c.rotate(rot);
+    const scl = Math.min(dw, dh) / (part.radius * 2);
+    c.scale(scl, scl);
+    paintWheel(c, partId, part.radius);
+    c.restore();
+    return;
+  }
+  const spr = partSprites[partId];
+  if (spr) {
+    c.save();
+    c.translate(x + dw / 2, y + dh / 2);
+    if (rot) c.rotate(rot);
+    const sx = dw / spr.w, sy = dh / spr.h;
+    const sp = spr.pad;
+    c.drawImage(spr.canvas,
+      0, 0, spr.canvas.width, spr.canvas.height,
+      (-dw / 2) - sp * sx, (-dh / 2) - sp * sy,
+      (spr.w + sp * 2) * sx, (spr.h + sp * 2) * sy);
+    c.restore();
+  } else {
+    c.save();
+    c.translate(x + dw / 2, y + dh / 2);
+    if (rot) c.rotate(rot);
+    c.translate(-dw / 2, -dh / 2);
+    c.scale(dw / 32, dh / 32);
+    paintPart(c, partId, 32, 32, dirtSeed || 1);
+    c.restore();
+  }
+}
+
+/* ============================================================
+   ART-PASS - ACHTERGROND & PARALLAX (art-bible 7)
+   ============================================================ */
+let groundTile = null, groundPattern = null;
+let parallaxFar = null, parallaxNear = null;
+const PARALLAX_SEG = 1024;
+
+function makeGroundTile() {
+  const t = document.createElement('canvas'); t.width = 256; t.height = 64;
+  const g = t.getContext('2d');
+  g.fillStyle = PAL.ground; g.fillRect(0, 0, 256, 64);
+  g.fillStyle = PAL.groundLight; g.fillRect(0, 0, 256, 6);
+  g.fillStyle = PAL.groundAccent;
+  g.fillRect(0, 22, 256, 3);
+  g.fillRect(0, 40, 256, 2);
+  const pebbles = [[18, 34], [60, 48], [110, 30], [150, 52], [200, 38], [238, 46]];
+  g.fillStyle = PAL.groundAccent;
+  for (const pb of pebbles) { g.beginPath(); g.arc(pb[0], pb[1], 3, 0, 7); g.fill(); }
+  g.fillStyle = PAL.groundLight;
+  for (const pb of pebbles) { g.beginPath(); g.arc(pb[0] - 1, pb[1] - 1, 1.4, 0, 7); g.fill(); }
+  g.fillStyle = PAL.groundShadow; g.fillRect(0, 58, 256, 6);
+  return t;
+}
+
+function makeParallaxLayer(near) {
+  const cv2 = document.createElement('canvas');
+  cv2.width = PARALLAX_SEG; cv2.height = 320;
+  const g = cv2.getContext('2d');
+  const rnd = seededRand(near ? 9173 : 4421);
+  const col = near ? '#6a584f' : PAL.bgMid;
+  const baseY = near ? 270 : 250;
+  g.fillStyle = col;
+  if (near) { g.strokeStyle = PAL.inkSoft; g.lineWidth = 2; }
+  let x = 0;
+  while (x < PARALLAX_SEG) {
+    const bw = 70 + rnd() * 130;
+    const bh = 70 + rnd() * (near ? 90 : 150);
+    const roofType = rnd();
+    g.beginPath();
+    g.moveTo(x, baseY);
+    g.lineTo(x, baseY - bh);
+    if (roofType < 0.4) {
+      g.lineTo(x + bw / 2, baseY - bh - 26);
+      g.lineTo(x + bw, baseY - bh);
+    } else if (roofType < 0.7) {
+      g.lineTo(x + bw * 0.5, baseY - bh - 16);
+      g.lineTo(x + bw * 0.5, baseY - bh);
+      g.lineTo(x + bw, baseY - bh - 16);
+    } else {
+      g.lineTo(x + bw, baseY - bh);
+    }
+    g.lineTo(x + bw, baseY);
+    g.closePath();
+    g.fill();
+    if (near) g.stroke();
+    if (rnd() < 0.4) {
+      const cw = 12 + rnd() * 10;
+      g.fillRect(x + bw * 0.65, baseY - bh - 40, cw, 40);
+    }
+    x += bw + (near ? 6 : -10) + rnd() * 30;
+  }
+  if (!near) {
+    const kx = PARALLAX_SEG * 0.62;
+    g.lineWidth = 8; g.strokeStyle = col;
+    g.beginPath(); g.moveTo(kx, baseY); g.lineTo(kx, baseY - 200); g.stroke();
+    g.beginPath(); g.moveTo(kx - 60, baseY - 180);
+    g.lineTo(kx + 110, baseY - 200); g.stroke();
+  }
+  if (near) {
+    for (let i = 0; i < 6; i++) {
+      const tx = rnd() * PARALLAX_SEG;
+      for (let s = 0; s < 3 + Math.floor(rnd() * 3); s++) {
+        g.beginPath();
+        g.ellipse(tx, baseY - 8 - s * 14, 18, 9, 0, 0, Math.PI * 2);
+        g.fill(); g.stroke();
+      }
+    }
+  }
+  return cv2;
+}
+
+function buildArtAssets() {
+  buildPartSprites();
+  groundTile = makeGroundTile();
+  groundPattern = ctx.createPattern(groundTile, 'repeat-x');
+  parallaxFar = makeParallaxLayer(false);
+  parallaxNear = makeParallaxLayer(true);
+}
+
+function drawParallaxLayer(img, factor, anchorY) {
+  if (!img) return;
+  const off = -((gameState.camera.x * factor) % PARALLAX_SEG);
+  const y = anchorY - img.height;
+  for (let i = -1; i <= Math.ceil(VW / PARALLAX_SEG) + 1; i++) {
+    ctx.drawImage(img, off + i * PARALLAX_SEG, y);
+  }
+}
+
+/* ---------- Build-grid render ---------- */
+function renderBuild() {
+  drawSky();
+  drawParallaxLayer(parallaxFar, 0, VH * 0.62);
+
+  const r = buildCanvasRect;
+  const cell = GRID.cell * r.scale;
+
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.fillStyle = PAL.panelDarker;
+  ctx.fillRect(r.x - 6, r.y - 6, r.w + 12, r.h + 12);
+  ctx.fillStyle = PAL.panelDark;
+  ctx.fillRect(r.x, r.y, r.w, r.h);
+
+  ctx.strokeStyle = PAL.inkSoft;
+  ctx.lineWidth = 1;
+  for (let gx = 0; gx <= GRID.cols; gx++) {
+    ctx.beginPath();
+    ctx.moveTo(r.x + gx*cell, r.y);
+    ctx.lineTo(r.x + gx*cell, r.y + r.h);
+    ctx.stroke();
+  }
+  for (let gy = 0; gy <= GRID.rows; gy++) {
+    ctx.beginPath();
+    ctx.moveTo(r.x, r.y + gy*cell);
+    ctx.lineTo(r.x + r.w, r.y + gy*cell);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  for (const p of gameState.placed) drawGridPart(p, r, cell);
+
+  if (drag.active && drag.partId) {
+    const gp = screenToGrid(drag.px, drag.py);
+    const part = PART_BY_ID[drag.partId];
+    if (gp) {
+      const ok = canPlace(drag.partId, gp.gx, gp.gy);
+      const cx = r.x + gp.gx*cell, cy = r.y + gp.gy*cell;
+      const cw = part.gw*cell, ch = part.gh*cell;
+      ctx.save();
+      ctx.fillStyle = ok ? 'rgba(92,191,90,0.30)' : 'rgba(200,51,42,0.30)';
+      ctx.fillRect(cx, cy, cw, ch);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = ok ? PAL.validGreen : PAL.invalidRed;
+      ctx.strokeRect(cx + 1, cy + 1, cw - 2, ch - 2);
+      ctx.lineWidth = 3; ctx.lineCap = 'round';
+      const gx2 = cx + cw/2, gy2 = cy + ch/2, gr = Math.min(cw, ch) * 0.18;
+      if (ok) {
+        ctx.strokeStyle = PAL.white;
+        ctx.beginPath();
+        ctx.moveTo(gx2 - gr, gy2);
+        ctx.lineTo(gx2 - gr*0.25, gy2 + gr*0.8);
+        ctx.lineTo(gx2 + gr, gy2 - gr*0.8);
+        ctx.stroke();
+      } else {
+        ctx.strokeStyle = PAL.invalidRed;
+        ctx.beginPath();
+        ctx.moveTo(gx2 - gr, gy2 - gr); ctx.lineTo(gx2 + gr, gy2 + gr);
+        ctx.moveTo(gx2 + gr, gy2 - gr); ctx.lineTo(gx2 - gr, gy2 + gr);
+        ctx.stroke();
+      }
+      ctx.restore();
+      ctx.save();
+      ctx.globalAlpha = 0.75;
+      drawPart(ctx, drag.partId, cx, cy - 6, cw, ch, 0, gp.gx + gp.gy);
+      ctx.restore();
+    } else {
+      ctx.save();
+      ctx.globalAlpha = 0.7;
+      drawPart(ctx, drag.partId,
+        drag.px - part.gw*cell/2, drag.py - part.gh*cell/2,
+        part.gw*cell, part.gh*cell, 0, 1);
+      ctx.restore();
+    }
+  }
+}
+
+function drawGridPart(p, r, cell) {
+  const part = PART_BY_ID[p.partId];
+  const x = r.x + p.gx*cell, y = r.y + p.gy*cell;
+  const w = part.gw*cell, h = part.gh*cell;
+  if (p.skeleton) {
+    ctx.save();
+    drawPart(ctx, p.partId, x, y, w, h, 0, p.gx*7 + p.gy*3 + 1);
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = PAL.partShadow;
+    ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
+    ctx.globalAlpha = 1;
+    ctx.setLineDash([4, 3]);
+    ctx.lineWidth = 2; ctx.strokeStyle = PAL.white;
+    ctx.strokeRect(x + 3, y + 3, w - 6, h - 6);
+    ctx.restore();
+    return;
+  }
+  // place-bounce: scale 1.0 -> 1.15 -> 1.0 over de placeT-klok (fase 4)
+  if (p.placeT != null && p.placeT < 1) {
+    const pb = 1 + 0.15 * Math.sin(p.placeT * Math.PI);
+    ctx.save();
+    ctx.translate(x + w / 2, y + h / 2);
+    ctx.scale(pb, pb);
+    ctx.translate(-(x + w / 2), -(y + h / 2));
+    drawPart(ctx, p.partId, x, y, w, h, 0, p.gx*7 + p.gy*3 + 2);
+    ctx.restore();
+    return;
+  }
+  drawPart(ctx, p.partId, x, y, w, h, 0, p.gx*7 + p.gy*3 + 2);
+}
+
+/* ---------- Drive world render ---------- */
+function worldToScreen(wx, wy) {
+  return {
+    x: (wx - gameState.camera.x) + VW/2,
+    y: (wy - gameState.camera.y) + VH/2,
+  };
+}
+
+function renderDrive() {
+  drawSky();
+  drawParallaxLayer(parallaxFar, 0.3, VH * 0.55);
+  drawParallaxLayer(parallaxNear, 0.7, VH * 0.62);
+
+  if (!engine) return;
+  const lvl = LEVELS[gameState.levelIndex];
+
+  for (const b of (gameState.levelBodies || [])) {
+    if (!b.vertices) continue;
+    drawObstacle(b);
+  }
+
+  drawFinishFlag(lvl);
+
+  const veh = gameState.vehicle;
+  if (veh) {
+    const cs = worldToScreen(veh.chassis.position.x, GROUND_Y);
+    ctx.save();
+    ctx.fillStyle = 'rgba(36,26,20,0.28)';
+    ctx.beginPath();
+    ctx.ellipse(cs.x, cs.y + 4, 70, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    drawVehicle(veh);
+  }
+}
+
+function drawObstacle(b) {
+  const s = worldToScreen(b.position.x, b.position.y);
+  ctx.save();
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  if (b.circleRadius) {
+    ctx.translate(s.x, s.y);
+    ctx.beginPath(); ctx.arc(0, 0, b.circleRadius, 0, Math.PI * 2);
+    ctx.fillStyle = PAL.ground; ctx.fill();
+    ctx.save();
+    ctx.beginPath(); ctx.arc(0, 0, b.circleRadius, 0, Math.PI * 2); ctx.clip();
+    ctx.fillStyle = PAL.groundLight;
+    ctx.fillRect(-b.circleRadius, -b.circleRadius, b.circleRadius * 2, 5);
+    ctx.fillStyle = PAL.groundAccent;
+    ctx.fillRect(-b.circleRadius, b.circleRadius * 0.3, b.circleRadius * 2, 3);
+    ctx.restore();
+    ctx.beginPath(); ctx.arc(0, 0, b.circleRadius, 0, Math.PI * 2);
+    ctx.lineWidth = 2; ctx.strokeStyle = PAL.groundShadow; ctx.stroke();
+    ctx.restore();
+    return;
+  }
+  const v = b.vertices;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const pt of v) {
+    if (pt.x < minX) minX = pt.x; if (pt.x > maxX) maxX = pt.x;
+    if (pt.y < minY) minY = pt.y; if (pt.y > maxY) maxY = pt.y;
+  }
+  const w = maxX - minX, h = maxY - minY;
+  ctx.translate(s.x, s.y);
+  ctx.rotate(b.angle);
+
+  if (b.label === 'mud') {
+    ctx.fillStyle = PAL.mud;
+    ctx.fillRect(-w/2, -h/2, w, h);
+    ctx.strokeStyle = PAL.groundAccent; ctx.lineWidth = 2;
+    for (let i = 1; i <= 3; i++) {
+      const ry = -h/2 + (h / 4) * i;
+      ctx.beginPath();
+      for (let x = -w/2; x <= w/2; x += 16)
+        x === -w/2 ? ctx.moveTo(x, ry + Math.sin(x*0.1)*2)
+                   : ctx.lineTo(x, ry + Math.sin(x*0.1)*2);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#5a4030';
+    ctx.beginPath(); ctx.ellipse(-w*0.2, -h*0.25, 9, 4, 0, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(w*0.25, -h*0.1, 7, 3, 0, 0, 7); ctx.fill();
+  } else if (b.label === 'rubber') {
+    const vary = ((b.id || 0) % 5) * 0.04;
+    ctx.beginPath(); ctx.roundRect(-w/2, -h/2, w, h, 6);
+    ctx.fillStyle = PAL.warn; ctx.fill();
+    ctx.save(); ctx.clip();
+    ctx.fillStyle = PAL.warnShadow; ctx.fillRect(-w/2, h*0.1, w, h);
+    ctx.fillStyle = 'rgba(255,255,255,' + (0.06 + vary) + ')';
+    ctx.fillRect(-w/2, -h/2, w, h*0.2);
+    ctx.fillStyle = PAL.metalTyre;
+    ctx.fillRect(-w*0.18, -h/2+4, 2, h-8);
+    ctx.fillRect(w*0.12, -h/2+4, 2, h-8);
+    ctx.restore();
+    ctx.beginPath(); ctx.roundRect(-w/2, -h/2, w, h, 6);
+    ctx.lineWidth = 3; ctx.strokeStyle = PAL.ink; ctx.stroke();
+  } else if (b.label === 'spinner') {
+    ctx.beginPath(); ctx.roundRect(-w/2, -h/2, w, h, 4);
+    ctx.fillStyle = PAL.part; ctx.fill();
+    ctx.save(); ctx.clip();
+    ctx.fillStyle = PAL.partShadow; ctx.fillRect(-w/2, 0, w, h);
+    ctx.restore();
+    ctx.beginPath(); ctx.roundRect(-w/2, -h/2, w, h, 4);
+    ctx.lineWidth = 3; ctx.strokeStyle = PAL.ink; ctx.stroke();
+    for (const bx of [-w*0.35, 0, w*0.35]) {
+      ctx.beginPath(); ctx.arc(bx, 0, 2, 0, Math.PI*2);
+      ctx.fillStyle = PAL.ink; ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(0, 0, h*0.7, 0, Math.PI*2);
+    ctx.fillStyle = PAL.metalTyre; ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = PAL.accent;
+    ctx.beginPath(); ctx.arc(0, 0, h*0.55, 0, Math.PI*0.5); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, h*0.55, Math.PI, Math.PI*1.5); ctx.stroke();
+  } else if (b.label === 'seesaw') {
+    ctx.beginPath(); ctx.roundRect(-w/2, -h/2, w, h, 4);
+    ctx.fillStyle = PAL.part; ctx.fill();
+    ctx.save(); ctx.clip();
+    ctx.fillStyle = PAL.partShadow; ctx.fillRect(-w/2, 0, w, h);
+    ctx.restore();
+    ctx.beginPath(); ctx.roundRect(-w/2, -h/2, w, h, 4);
+    ctx.lineWidth = 3; ctx.strokeStyle = PAL.ink; ctx.stroke();
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath(); ctx.arc(i*w*0.2, 0, 2, 0, Math.PI*2);
+      ctx.fillStyle = PAL.ink; ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI*2);
+    ctx.fillStyle = PAL.metalTyre; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = PAL.ink; ctx.stroke();
+  } else {
+    if (groundPattern) {
+      ctx.save();
+      ctx.translate(-w/2, -h/2);
+      const offX = -((b.position.x - w/2) % 256);
+      ctx.translate(offX, 0);
+      ctx.fillStyle = groundPattern;
+      ctx.fillRect(-offX, 0, w, h);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = PAL.ground;
+      ctx.fillRect(-w/2, -h/2, w, h);
+    }
+    ctx.fillStyle = PAL.groundLight;
+    ctx.fillRect(-w/2, -h/2, w, 4);
+    ctx.fillStyle = PAL.groundShadow;
+    ctx.fillRect(-w/2, h/2 - 5, w, 5);
+    const rnd = seededRand(Math.round(b.position.x) * 131 + 7);
+    ctx.strokeStyle = PAL.validGreen; ctx.lineWidth = 2;
+    const tufts = Math.max(1, Math.floor(w / 90));
+    for (let i = 0; i < tufts; i++) {
+      const tx = -w/2 + (w / (tufts + 1)) * (i + 1) + (rnd() - 0.5) * 20;
+      for (let k = -1; k <= 1; k++) {
+        ctx.beginPath();
+        ctx.moveTo(tx + k*3, -h/2);
+        ctx.lineTo(tx + k*5, -h/2 - 5 - rnd()*3);
+        ctx.stroke();
+      }
+    }
+    if (b.renderType === 'ramp') {
+      ctx.fillStyle = PAL.part;
+      ctx.fillRect(-w/2, -h/2 - 4, w, 5);
+      ctx.lineWidth = 2; ctx.strokeStyle = PAL.ink;
+      ctx.strokeRect(-w/2, -h/2 - 4, w, 5);
+    }
+  }
+  ctx.restore();
+}
+
+function drawFinishFlag(lvl) {
+  const base = worldToScreen(SPAWN_X + lvl.length, GROUND_Y);
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.fillStyle = PAL.metalTyre;
+  ctx.fillRect(base.x - 3, base.y - 92, 6, 92);
+  ctx.lineWidth = 2; ctx.strokeStyle = PAL.ink;
+  ctx.strokeRect(base.x - 3, base.y - 92, 6, 92);
+  ctx.beginPath();
+  ctx.moveTo(base.x + 3, base.y - 90);
+  ctx.lineTo(base.x + 36, base.y - 78);
+  ctx.lineTo(base.x + 3, base.y - 66);
+  ctx.closePath();
+  ctx.fillStyle = PAL.warn; ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = PAL.ink; ctx.stroke();
+  ctx.beginPath(); ctx.arc(base.x, base.y - 92, 4, 0, Math.PI * 2);
+  ctx.fillStyle = PAL.accent; ctx.fill(); ctx.stroke();
+  ctx.restore();
+}
+
+function drawVehicle(veh) {
+  const cell = GRID.cell;
+  const ch = veh.chassis;
+  ctx.save();
+  const cps = worldToScreen(ch.position.x, ch.position.y);
+  ctx.translate(cps.x, cps.y);
+  ctx.rotate(ch.angle);
+  const spawnX = veh.spawnX, spawnY = veh.spawnY;
+  for (const p of gameState.placed) {
+    const part = PART_BY_ID[p.partId];
+    if (part.role === 'wheel') continue;
+    const wx = spawnX + (p.gx + part.gw/2) * cell;
+    const wy = spawnY + (p.gy + part.gh/2) * cell;
+    const lx = wx - ch.position.x, ly = wy - ch.position.y;
+    drawPart(ctx, p.partId,
+      lx - part.gw*cell/2, ly - part.gh*cell/2,
+      part.gw*cell, part.gh*cell, 0, p.gx*7 + p.gy*3 + 2);
+  }
+  ctx.restore();
+  for (const w of veh.wheels) {
+    const s = worldToScreen(w.body.position.x, w.body.position.y);
+    const d = w.part.radius * 2;
+    drawPart(ctx, w.part.id, s.x - w.part.radius, s.y - w.part.radius,
+      d, d, w.body.angle, 1);
+  }
+}
+
+/* ---------- Title-truck (art-bible 8.2) ---------- */
+let titleT = 0;
+function renderTitleTruck() {
+  const tc = document.getElementById('titleCanvas');
+  if (!tc) return;
+  const c = tc.getContext('2d');
+  c.setTransform(2, 0, 0, 2, 0, 0);
+  const W = 420, H = 170;
+  c.clearRect(0, 0, W, H);
+  c.save();
+  c.lineJoin = 'round'; c.lineCap = 'round';
+
+  const ledgeY = H - 30;
+  c.fillStyle = PAL.part;
+  c.fillRect(0, ledgeY, W, 30);
+  c.fillStyle = PAL.partShadow;
+  c.fillRect(0, ledgeY + 16, W, 14);
+  c.lineWidth = 3; c.strokeStyle = PAL.ink;
+  c.beginPath(); c.moveTo(0, ledgeY); c.lineTo(W, ledgeY); c.stroke();
+  for (let bx = 22; bx < W; bx += 56) {
+    c.beginPath(); c.arc(bx, ledgeY + 9, 2.5, 0, Math.PI * 2);
+    c.fillStyle = PAL.ink; c.fill();
+  }
+
+  const wob = Math.sin(titleT * 1.4) * 1.6;
+  c.save();
+  c.translate(W / 2, ledgeY - 4 + wob);
+
+  c.fillStyle = 'rgba(36,26,20,0.28)';
+  c.beginPath(); c.ellipse(0, 0, 95, 9, 0, 0, Math.PI * 2); c.fill();
+
+  for (const wx of [-58, 58]) {
+    c.save();
+    c.translate(wx, -34);
+    paintWheel(c, 'bigWheel', 34);
+    c.restore();
+  }
+  for (let i = 0; i < 3; i++) {
+    drawPart(c, 'chassis', -54 + i * 36, -94, 36, 36, 0, i + 3);
+  }
+  drawPart(c, 'bumper', 50, -88, 40, 24, 0, 5);
+  drawPart(c, 'motorBasic', -14, -126, 34, 34, 0, 7);
+  c.fillStyle = PAL.metalTyre;
+  c.fillRect(-44, -128, 9, 22);
+  c.lineWidth = 2; c.strokeStyle = PAL.ink;
+  c.strokeRect(-44, -128, 9, 22);
+  for (let p = 0; p < 3; p++) {
+    const pf = (titleT * 0.6 + p * 0.4) % 1;
+    c.globalAlpha = (1 - pf) * 0.5;
+    c.fillStyle = PAL.bgMid;
+    c.beginPath();
+    c.arc(-40 + pf * 8, -132 - pf * 22, 4 + pf * 7, 0, Math.PI * 2);
+    c.fill();
+  }
+  c.globalAlpha = 1;
+  c.restore();
+  c.restore();
+}
+
+/* ---------- HUD updates ---------- */
+function updateDriveHUD() {
+  const lvl = LEVELS[gameState.levelIndex];
+  const t = gameState.timer;
+  document.getElementById('driveTimer').textContent =
+    '⏱ ' + t.toFixed(1) + 's';
+  const parEl = document.getElementById('drivePar');
+  parEl.textContent = '\u{1F3AF} Par ' + lvl.parTime + 's';
+  parEl.style.color = t <= lvl.parTime ? 'var(--valid-green)' : 'var(--warn-light)';
+}
+
+/* ============================================================
+   GAME LOOP - requestAnimationFrame, delta-time
+   ============================================================ */
+let lastTime = performance.now();
+function loop(now) {
+  let dt = (now - lastTime) / 1000;
+  lastTime = now;
+  if (dt > 0.05) dt = 0.05;
+
+  if (gameState.state === 'drive') {
+    if (driveStarted) driveUpdate(dt);
+    gameState.camera.x += (gameState.cameraTarget.x - gameState.camera.x) * 0.1;
+    gameState.camera.y += (gameState.cameraTarget.y - gameState.camera.y) * 0.1;
+    updateDriveHUD();
+  }
+
+  // Fase 4 — juice-systemen tikken altijd door (ook tijdens result).
+  updateParticles(dt);
+  updateShake(dt);
+  updateFlash(dt);
+  if (gameState.state === 'build') {
+    for (const pp of gameState.placed)
+      if (pp.placeT != null && pp.placeT < 1)
+        pp.placeT = Math.min(1, pp.placeT + dt * 5);
+  }
+
+  // screen-shake offset op de canvas-transform (met decay).
+  ctx.setTransform(DPR, 0, 0, DPR, shake.x * DPR, shake.y * DPR);
+
+  if (gameState.state === 'build') {
+    renderBuild();
+    renderParticles(false);
+  } else if (gameState.state === 'drive' || gameState.state === 'result') {
+    renderDrive();
+    renderParticles(true);    // wereld-particles (sparks, mud, ringen)
+    renderParticles(false);   // scherm-particles (confetti, star-pop)
+  } else {
+    clearCanvas();
+    if (gameState.state === 'title') {
+      titleT += dt;
+      renderTitleTruck();
+    }
+  }
+
+  drawFlash();   // witte screen-flash overlay, boven alles
+
+  requestAnimationFrame(loop);
+}
+
+/* ---------- init (Fase 3 - art pass; Fase 6 - final polish) ---------- */
+buildArtAssets();
+requestAnimationFrame(loop);
+setState('title');
+</script>
+</body>
+</html>
