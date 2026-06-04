@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Stickman Diplomat</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#1a1d29;color:#e8e8f0;min-height:100vh;display:flex;justify-content:center}
+#app{width:100%;max-width:560px;padding:10px;display:flex;flex-direction:column;gap:8px}
+h1{font-size:20px;text-align:center;color:#ffd166;letter-spacing:1px}
+.bar{display:flex;justify-content:space-between;font-size:13px;color:#9aa0b5;flex-wrap:wrap;gap:4px}
+.panel{background:#242838;border:1px solid #363c52;border-radius:10px;padding:10px}
+.hidden{display:none!important}
+button{background:#3a4160;color:#e8e8f0;border:1px solid #545d85;border-radius:8px;padding:9px 12px;font-size:14px;cursor:pointer;touch-action:manipulation}
+button:active{background:#4a527a}
+button:disabled{opacity:.4;cursor:default}
+button.primary{background:#2f6b4f;border-color:#4a9b76}
+button.danger{background:#6b2f2f;border-color:#9b4a4a}
+.units{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.unit{background:#2b3046;border:2px solid #404766;border-radius:8px;padding:8px;display:flex;align-items:center;gap:8px}
+.unit.sel{border-color:#ffd166}
+.unit canvas{flex:0 0 36px}
+.uinfo{flex:1;font-size:12px;line-height:1.35}
+.uinfo b{font-size:13px;color:#fff}
+.cnt{display:flex;align-items:center;gap:6px}
+.cnt button{padding:4px 11px;font-size:16px;line-height:1}
+.cnt span{min-width:20px;text-align:center;font-weight:bold;font-size:15px}
+#msgs{display:flex;flex-direction:column;gap:6px;max-height:170px;overflow-y:auto;font-size:13px}
+.msg{padding:7px 10px;border-radius:8px;max-width:88%;line-height:1.4}
+.msg.ai{background:#3a3050;align-self:flex-start}
+.msg.me{background:#2f4a6b;align-self:flex-end}
+.msg.sys{background:transparent;color:#8a90a8;align-self:center;font-style:italic;font-size:12px}
+.choices{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.choices button{text-align:left;font-size:13px}
+#battleC{width:100%;background:#11131c;border-radius:8px;display:block}
+.row{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+.big{font-size:17px;padding:12px 22px}
+.tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;background:#3a4160}
+#enemyVis{display:flex;gap:10px;flex-wrap:wrap;font-size:13px;align-items:center}
+.estack{display:flex;align-items:center;gap:4px;background:#2b3046;padding:4px 8px;border-radius:8px}
+h3{font-size:14px;color:#ffd166;margin-bottom:6px}
+.note{font-size:12px;color:#9aa0b5;margin-top:6px;line-height:1.4}
+#result h2{text-align:center;margin-bottom:8px}
+.win{color:#6fdf9a}.lose{color:#ef6f6f}
+#repBar{height:6px;background:#363c52;border-radius:3px;overflow:hidden;margin-top:4px}
+#repFill{height:100%;background:#6fdf9a;width:100%;transition:width .4s}
+</style>
+</head>
+<body>
+<div id="app">
+<h1>⚔ STICKMAN DIPLOMAT ⚔</h1>
+<div class="bar"><span id="oppLabel"></span><span id="goldLabel"></span><span id="scoreLabel"></span></div>
+<div class="bar"><span style="flex:1">Reputatie: <span id="repPct"></span><span id="repBar"><span id="repFill"></span></span></span></div>
+
+<div id="screenIntro" class="panel">
+<h3>Welkom, diplomaat</h3>
+<p class="note">Versla 3 AI-tegenstanders. Per gevecht: stel je leger samen (100 goud), onderhandel (de AI bluft soms!), en kijk je stickmannen vechten. Counters: Zwaard ▶ Speer ▶ Cavalerie ▶ Boog ▶ Zwaard. Counter de échte samenstelling van de vijand — niet wat hij zégt dat hij heeft.</p>
+<p class="note" id="bestNote"></p>
+<div class="row" style="margin-top:10px"><button class="primary big" id="startBtn">Start campagne</button></div>
+</div>
+
+<div id="screenBuild" class="panel hidden">
+<h3 id="buildTitle">Stel je leger samen</h3>
+<div id="enemyVisWrap"><div style="font-size:12px;color:#9aa0b5;margin-bottom:4px">Zichtbaar vijandelijk leger (1 stack kan verborgen zijn!):</div><div id="enemyVis"></div></div>
+<div class="units" id="unitGrid" style="margin-top:8px"></div>
+<p class="note">Goud over: <b id="buildGold"></b> · Verberg-token: kies 1 van je stacks om te verbergen voor de vijand (tik op de kaart-rand).</p>
+<div class="row" style="margin-top:8px"><button class="primary" id="toNegBtn">Naar onderhandeling →</button></div>
+</div>
+
+<div id="screenNeg" class="panel hidden">
+<h3>Onderhandelfase <span class="tag" id="negLeft"></span></h3>
+<div id="msgs"></div>
+<div class="choices" id="negChoices"></div>
+<div class="row" style="margin-top:8px"><button class="primary" id="fightBtn">⚔ Vechten!</button></div>
+</div>
+
+<div id="screenBattle" class="panel hidden">
+<canvas id="battleC" width="540" height="240"></canvas>
+<div class="row" style="margin-top:8px"><button id="skipBtn">Versnel ▸▸</button></div>
+</div>
+
+<div id="screenResult" class="panel hidden">
+<div id="result"></div>
+<div class="row" style="margin-top:10px"><button class="primary big" id="nextBtn"></button></div>
+</div>
+</div>
+<script>
+"use strict";
+// ===== data =====
+var UNITS={sword:{nm:"Zwaard",cost:10,pow:10,beats:"spear",col:"#e8e8f0",wep:"sword"},
+spear:{nm:"Speer",cost:10,pow:10,beats:"cav",col:"#9ad1ef",wep:"spear"},
+cav:{nm:"Cavalerie",cost:15,pow:14,beats:"archer",col:"#ffd166",wep:"cav"},
+archer:{nm:"Boog",cost:8,pow:8,beats:"sword",col:"#a8ef9a",wep:"bow"}};
+var TYPES=["sword","spear","cav","archer"];
+var BEATEN={};TYPES.forEach(function(t){BEATEN[UNITS[t].beats]=t;});
+var OPPONENTS=[
+ {nm:"Eerlijke Erik",pers:"honest",desc:"eerlijk — verbergt niets en spreekt de waarheid",bias:0.65,hides:false,counters:false},
+ {nm:"Leugen-Lars",pers:"liar",desc:"leugenaar — verbergt een stack en bluft erop los",bias:0.6,hides:true,counters:false},
+ {nm:"Gok-Greta",pers:"gambler",desc:"gokker — verbergt, gokt en countert jouw zichtbare leger",bias:0,hides:true,counters:true}];
+// ===== state =====
+var S={};
+function emptyArmy(){return{sword:0,spear:0,cav:0,archer:0};}
+function resetRun(){S={phase:"intro",lvl:0,score:0,wins:0,rep:100,player:emptyArmy(),hidden:null,ai:null,aiHidden:null,msgsLeft:2,dealOffered:false,dealAccepted:false,dealKept:true,intel:null,log:[],battle:null};}
+// ===== persistence =====
+function loadBest(){try{var r=localStorage.getItem("sd_best");if(r==null)return null;var v=JSON.parse(r);if(typeof v!=="object"||v===null)return null;var s=Number(v.score),w=Number(v.wins);if(!isFinite(s)||!isFinite(w)||s<0||w<0||w>3)return null;return{score:Math.floor(s),wins:Math.floor(w)};}catch(e){return null;}}
+function saveBest(score,wins){try{var b=loadBest();if(!b||score>b.score)localStorage.setItem("sd_best",JSON.stringify({score:score,wins:wins}));}catch(e){}}
+// ===== combat model (tuned via self-test) =====
+function power(army,enemy){var tot=0,eT=0,i,t;for(i=0;i<4;i++)eT+=enemy[TYPES[i]];if(eT<1)eT=1;
+ for(i=0;i<4;i++){t=TYPES[i];var u=UNITS[t],m=0;for(var j=0;j<4;j++){var e=TYPES[j],f=enemy[e]/eT;
+  if(u.beats===e)m+=f*1.8;else if(UNITS[e].beats===t)m+=f*0.55;else m+=f;}tot+=army[t]*u.pow*m;}return tot;}
+function armyCost(a){var g=0;TYPES.forEach(function(t){g+=a[t]*UNITS[t].cost;});return g;}
+function armySize(a){return a.sword+a.spear+a.cav+a.archer;}
+function biggestStack(a){var b=TYPES[0];TYPES.forEach(function(t){if(a[t]*UNITS[t].pow>a[b]*UNITS[b].pow)b=t;});return b;}
+// ===== AI army build =====
+function buildAiArmy(opp,playerVisible){var a=emptyArmy(),g=100,guard=0,t;
+ if(opp.counters&&playerVisible&&armySize(playerVisible)>0){
+  var sorted=TYPES.slice().sort(function(x,y){return playerVisible[y]*UNITS[y].pow-playerVisible[x]*UNITS[x].pow;});
+  var c1=BEATEN[sorted[0]],c2=BEATEN[sorted[1]];
+  while(g>=UNITS[c1].cost&&g>30){a[c1]++;g-=UNITS[c1].cost;}
+  while(g>=UNITS[c2].cost){a[c2]++;g-=UNITS[c2].cost;}
+  while(g>=8){a.archer++;g-=8;}return a;}
+ var bias=TYPES[Math.floor(Math.random()*4)];
+ while(g>=8&&guard++<300){t=(Math.random()<opp.bias)?bias:TYPES[Math.floor(Math.random()*4)];
+  if(UNITS[t].cost<=g){a[t]++;g-=UNITS[t].cost;}}
+ return a;}
+function visibleOf(army,hiddenType){var v=emptyArmy();TYPES.forEach(function(t){v[t]=(t===hiddenType)?0:army[t];});return v;}
+// ===== DOM helpers =====
+function $(id){return document.getElementById(id);}
+function show(id){["screenIntro","screenBuild","screenNeg","screenBattle","screenResult"].forEach(function(s){$(s).classList.add("hidden");});$(id).classList.remove("hidden");}
+function setText(id,txt){$(id).textContent=txt;}
+function drawStick(ctx,x,y,scale,col,wep,walk){ctx.strokeStyle=col;ctx.fillStyle=col;ctx.lineWidth=2*scale;ctx.lineCap="round";
+ var s=scale,leg=walk?Math.sin(walk)*4*s:0;
+ ctx.beginPath();ctx.arc(x,y-14*s,3.5*s,0,6.3);ctx.stroke();
+ ctx.beginPath();ctx.moveTo(x,y-10*s);ctx.lineTo(x,y-2*s);
+ ctx.moveTo(x,y-2*s);ctx.lineTo(x-3*s+leg,y+6*s);ctx.moveTo(x,y-2*s);ctx.lineTo(x+3*s-leg,y+6*s);
+ ctx.moveTo(x,y-8*s);ctx.lineTo(x-4*s,y-4*s);ctx.moveTo(x,y-8*s);ctx.lineTo(x+4*s,y-5*s);ctx.stroke();
+ ctx.beginPath();
+ if(wep==="sword"){ctx.moveTo(x+4*s,y-5*s);ctx.lineTo(x+8*s,y-12*s);}
+ else if(wep==="spear"){ctx.moveTo(x+4*s,y-1*s);ctx.lineTo(x+10*s,y-13*s);}
+ else if(wep==="bow"){ctx.arc(x+5*s,y-6*s,4*s,-1.2,1.2);}
+ else{ctx.moveTo(x-6*s,y+6*s);ctx.lineTo(x+7*s,y+6*s);ctx.moveTo(x+7*s,y+6*s);ctx.lineTo(x+9*s,y+2*s);}
+ ctx.stroke();}
+function unitIcon(canvas,type){canvas.width=36;canvas.height=36;var c=canvas.getContext("2d");drawStick(c,16,26,1.4,UNITS[type].col,UNITS[type].wep,0);}
+// ===== build screen =====
+function startLevel(){var opp=OPPONENTS[S.lvl];S.player=emptyArmy();S.hidden=null;S.msgsLeft=2;S.dealOffered=false;S.dealAccepted=false;S.intel=null;S.log=[];
+ // honest+liar build blind; gambler waits to counter — pre-build placeholder
+ S.ai=opp.counters?null:buildAiArmy(opp,null);
+ S.aiHidden=(S.ai&&opp.hides)?biggestStack(S.ai):null;
+ setText("oppLabel","Tegenstander "+(S.lvl+1)+"/3: "+opp.nm);
+ setText("scoreLabel","Score: "+S.score);
+ renderBuild();show("screenBuild");}
+function renderBuild(){var opp=OPPONENTS[S.lvl],grid=$("unitGrid");grid.textContent="";
+ setText("buildTitle","Leger vs "+opp.nm+" ("+opp.desc+")");
+ var ev=$("enemyVis");ev.textContent="";
+ if(S.ai){var vis=visibleOf(S.ai,S.aiHidden),any=false;
+  TYPES.forEach(function(t){if(vis[t]>0){any=true;var d=document.createElement("div");d.className="estack";
+   var c=document.createElement("canvas");c.style.width="24px";c.style.height="24px";unitIcon(c,t);
+   var sp=document.createElement("span");sp.textContent=UNITS[t].nm+" ×"+vis[t];d.appendChild(c);d.appendChild(sp);ev.appendChild(d);}});
+  if(S.aiHidden){var h=document.createElement("div");h.className="estack";h.textContent="❓ verborgen stack";ev.appendChild(h);}
+  if(!any&&!S.aiHidden)ev.textContent="(leeg?)";}
+ else ev.textContent="❓❓❓ "+opp.nm+" wacht af en stelt pas later samen…";
+ TYPES.forEach(function(t){var u=UNITS[t],card=document.createElement("div");card.className="unit"+(S.hidden===t?" sel":"");
+  var c=document.createElement("canvas");c.style.width="36px";c.style.height="36px";unitIcon(c,t);
+  var info=document.createElement("div");info.className="uinfo";
+  var b=document.createElement("b");b.textContent=u.nm+" ("+u.cost+"g)";
+  var br=document.createElement("div");br.textContent="verslaat "+UNITS[u.beats].nm;
+  info.appendChild(b);info.appendChild(br);
+  var cnt=document.createElement("div");cnt.className="cnt";
+  var minus=document.createElement("button");minus.textContent="−";
+  var num=document.createElement("span");num.textContent=S.player[t];
+  var plus=document.createElement("button");plus.textContent="+";
+  minus.addEventListener("click",function(ev){ev.stopPropagation();if(S.player[t]>0){S.player[t]--;if(S.player[t]===0&&S.hidden===t)S.hidden=null;renderBuild();}});
+  plus.addEventListener("click",function(ev){ev.stopPropagation();if(armyCost(S.player)+u.cost<=100){S.player[t]++;renderBuild();}});
+  cnt.appendChild(minus);cnt.appendChild(num);cnt.appendChild(plus);
+  card.appendChild(c);card.appendChild(info);card.appendChild(cnt);
+  card.addEventListener("click",function(){if(S.player[t]>0){S.hidden=(S.hidden===t)?null:t;renderBuild();}});
+  grid.appendChild(card);});
+ setText("buildGold",String(100-armyCost(S.player)));
+ setText("goldLabel","Goud: "+(100-armyCost(S.player))+"/100");
+ $("toNegBtn").disabled=armySize(S.player)===0;}
+// ===== negotiation =====
+function aiLine(txt){addMsg(txt,"ai");}
+function addMsg(txt,cls){var d=document.createElement("div");d.className="msg "+cls;d.textContent=txt;$("msgs").appendChild(d);$("msgs").scrollTop=99999;}
+function aiIntelAnswer(opp){var real=S.aiHidden?S.aiHidden:biggestStack(S.ai);var claim=real;
+ if(opp.pers==="liar")claim=UNITS[real].beats===real?real:TYPES[(TYPES.indexOf(real)+2)%4];
+ else if(opp.pers==="gambler"&&Math.random()<0.5)claim=TYPES[Math.floor(Math.random()*4)];
+ S.intel={claim:claim,real:real};
+ var n=S.aiHidden?S.ai[S.aiHidden]:S.ai[real];
+ var fake=opp.pers==="honest"?n:Math.max(1,Math.round(n*(0.5+Math.random()*1.5)));
+ return"Mijn sterkste troef? "+(opp.pers==="honest"?n:fake)+"× "+UNITS[claim].nm+". Geloof het of niet.";}
+function startNeg(){var opp=OPPONENTS[S.lvl];
+ if(opp.counters){S.ai=buildAiArmy(opp,visibleOf(S.player,S.hidden));S.aiHidden=opp.hides?biggestStack(S.ai):null;}
+ $("msgs").textContent="";addMsg("Onderhandeling gestart met "+opp.nm+". Je mag 2 berichten sturen.","sys");
+ aiLine(opp.pers==="honest"?"Ik speel open kaart. Vraag wat je wil.":opp.pers==="liar"?"Mijn leger is GIGANTISCH. Geef je nu maar over.":"Ik heb al gezien wat jij hebt staan... interessant.");
+ renderNegChoices();show("screenNeg");}
+function renderNegChoices(){var box=$("negChoices");box.textContent="";setText("negLeft",S.msgsLeft+" berichten over");
+ var opp=OPPONENTS[S.lvl];
+ if(S.msgsLeft>0){
+  mkChoice(box,"🔍 “Wat is je sterkste eenheid?”",function(){addMsg("Wat is je sterkste eenheid?","me");aiLine(aiIntelAnswer(opp));useMsg();});
+  mkChoice(box,"😤 “Mijn leger verplettert je sowieso!” (bluf)",function(){addMsg("Mijn leger verplettert je sowieso!","me");
+   aiLine(opp.pers==="gambler"?"Bluf. Ik gok dat je zwak bent waar je zwijgt.":opp.pers==="liar"?"Haha, het mijne is twee keer zo groot!":"Dat zien we zo wel. Ik vecht eerlijk.");useMsg();});}
+ if(!S.dealOffered){mkChoice(box,"🤝 Deal: “onthul je verborgen stack, dan deel ik de winst (+"+10+"g score voor jou)”",function(){
+  S.dealOffered=true;addMsg("Deal: onthul je verborgen stack, dan deel ik straks de winst.","me");
+  var accepts=opp.pers==="honest"||(opp.pers==="gambler"&&Math.random()<0.5);
+  if(accepts){S.dealAccepted=true;
+   if(opp.pers==="honest"&&S.aiHidden){aiLine("Deal. Mijn verborgen stack: "+S.ai[S.aiHidden]+"× "+UNITS[S.aiHidden].nm+".");S.intel={claim:S.aiHidden,real:S.aiHidden};}
+   else if(opp.pers==="honest"){aiLine("Deal — maar ik verberg niets, alles staat al open.");}
+   else{aiLine("Deal. Mijn verborgen stack: "+UNITS[aiGambleClaim()].nm+"... denk ik. Gokje.");}
+  }else aiLine(opp.pers==="liar"?"Deal! Mijn verborgen stack is ENORM veel "+UNITS[liarClaim()].nm+". Echt waar. (deal: geaccepteerd)":"Nee. Ik hou mijn kaarten tegen de borst.");
+  if(opp.pers==="liar"){S.dealAccepted=true;}
+  renderNegChoices();});}
+ if(S.msgsLeft>0||!S.dealOffered)mkChoice(box,"↩ Terug naar legeropbouw (vijand kan al gecounterd hebben!)",function(){renderBuild();show("screenBuild");});}
+function liarClaim(){var real=S.aiHidden||biggestStack(S.ai);var c=TYPES[(TYPES.indexOf(real)+2)%4];S.intel={claim:c,real:real};return c;}
+function aiGambleClaim(){var real=S.aiHidden||biggestStack(S.ai);var c=Math.random()<0.6?real:TYPES[Math.floor(Math.random()*4)];S.intel={claim:c,real:real};return c;}
+function mkChoice(box,label,fn){var b=document.createElement("button");b.textContent=label;b.addEventListener("click",fn);box.appendChild(b);}
+function useMsg(){S.msgsLeft--;renderNegChoices();}
+// ===== battle =====
+var lastT=0,raf=0;
+function startBattle(){var pa=power(S.player,S.ai),pb=power(S.ai,S.player);
+ var noise=0.95+Math.random()*0.1;
+ var win=pa*noise>pb;
+ S.battle={win:win,t:0,dur:6,fast:false,
+  p:troops(S.player,true),e:troops(S.ai,false),
+  pFrac:1,eFrac:1,
+  pRatio:win?Math.min(0.95,(pb/(pa+1))*0.9):1,
+  eRatio:win?1:Math.min(0.95,(pa/(pb+1))*0.9)};
+ show("screenBattle");lastT=0;cancelAnimationFrame(raf);raf=requestAnimationFrame(loop);}
+function troops(army,left){var arr=[];TYPES.forEach(function(t){var n=Math.min(army[t],14);
+ for(var i=0;i<n;i++)arr.push({t:t,x:left?20+Math.random()*120:520-Math.random()*120,y:90+Math.random()*130,ph:Math.random()*6.3});});
+ return arr;}
+function loop(ts){if(!lastT)lastT=ts;var dt=Math.min((ts-lastT)/1000,0.05);lastT=ts;
+ var B=S.battle;if(!B)return;
+ B.t+=dt*(B.fast?3:1);
+ var prog=Math.min(B.t/B.dur,1);
+ B.pFrac=1-prog*(B.win?B.pRatio:1);B.eFrac=1-prog*(B.win?1:B.eRatio);
+ renderBattle(prog);
+ if(prog>=1){S.battle=null;setTimeout(function(){endBattle(B.win);},600);return;}
+ raf=requestAnimationFrame(loop);}
+function renderBattle(prog){var c=$("battleC"),ctx=c.getContext("2d");ctx.clearRect(0,0,540,240);
+ ctx.fillStyle="#2a2438";ctx.fillRect(0,215,540,25);
+ ctx.fillStyle="#9aa0b5";ctx.font="12px sans-serif";ctx.textAlign="left";ctx.fillText("Jij",10,16);ctx.textAlign="right";ctx.fillText(OPPONENTS[S.lvl].nm,530,16);
+ var B=S.battle;if(!B)return;
+ var meet=270,clash=Math.min(prog*2,1);
+ drawSide(ctx,B.p,B.pFrac,true,meet,clash);drawSide(ctx,B.e,B.eFrac,false,meet,clash);
+ ctx.fillStyle="#ffd166";ctx.textAlign="center";
+ if(prog>0.15)for(var i=0;i<4;i++){var a=B.t*7+i*1.7;ctx.fillText("✦",meet+Math.sin(a)*30,80+Math.cos(a*1.3)*40+60);}}
+function drawSide(ctx,arr,frac,left,meet,clash){var alive=Math.max(1,Math.round(arr.length*frac));
+ for(var i=0;i<arr.length;i++){var u=arr[i];if(i>=alive){ctx.globalAlpha=0.15;}
+  var tx=left?u.x+(meet-60-u.x)*clash:u.x+(meet+60-u.x)*clash;
+  drawStick(ctx,tx,u.y,1.2,UNITS[u.t].col,UNITS[u.t].wep,S.battle.t*8+u.ph);
+  ctx.globalAlpha=1;}}
+// ===== result =====
+function endBattle(win){var opp=OPPONENTS[S.lvl];var pts=0,lines=[];
+ if(win){pts=50+S.lvl*25;S.wins++;lines.push("Overwinning! +"+pts+" punten.");}
+ else{pts=10;lines.push("Verslagen... +10 troostpunten.");}
+ if(S.dealAccepted){var kept=opp.pers!=="liar";
+  if(kept&&win){pts+=10;lines.push("Deal nagekomen: +10 bonus.");}
+  else if(!kept){S.rep=Math.max(0,S.rep-15);lines.push(opp.nm+" brak de deal! (zijn reputatie kelderde — jouw vertrouwen was gratis les)");}}
+ if(S.intel&&S.intel.claim!==S.intel.real)lines.push("Achteraf: de intel ("+UNITS[S.intel.claim].nm+") was gelogen — echt was "+UNITS[S.intel.real].nm+".");
+ else if(S.intel)lines.push("De intel klopte: "+UNITS[S.intel.real].nm+" was inderdaad de troef.");
+ pts=Math.round(pts*(0.5+S.rep/200));
+ S.score+=pts;
+ var r=$("result");r.textContent="";
+ var h=document.createElement("h2");h.className=win?"win":"lose";h.textContent=win?"🏆 GEWONNEN":"💀 VERLOREN";r.appendChild(h);
+ lines.push("Vijandelijk leger was: "+TYPES.filter(function(t){return S.ai[t]>0;}).map(function(t){return S.ai[t]+"× "+UNITS[t].nm;}).join(", ")+".");
+ lines.forEach(function(l){var p=document.createElement("p");p.className="note";p.textContent=l;r.appendChild(p);});
+ setText("scoreLabel","Score: "+S.score);updateRep();
+ var last=S.lvl>=2;
+ if(last){var best=loadBest();saveBest(S.score,S.wins);
+  var fin=document.createElement("p");fin.className="note";
+  fin.textContent="Campagne klaar: "+S.wins+"/3 gewonnen, eindscore "+S.score+(best&&S.score>best.score?" — NIEUW RECORD!":best?" (record: "+best.score+")":"");
+  r.appendChild(fin);$("nextBtn").textContent="↻ Opnieuw spelen";}
+ else $("nextBtn").textContent="Volgende tegenstander →";
+ $("nextBtn").onclick=function(){if(last){resetRun();initIntro();}else{S.lvl++;startLevel();}};
+ show("screenResult");}
+function updateRep(){setText("repPct",S.rep+"%");$("repFill").style.width=S.rep+"%";}
+// ===== wiring =====
+function initIntro(){var b=loadBest();setText("bestNote",b?("Beste score: "+b.score+" ("+b.wins+"/3 gewonnen)"):"Nog geen record — zet de eerste score!");
+ setText("oppLabel","");setText("goldLabel","");setText("scoreLabel","Score: 0");updateRep();show("screenIntro");}
+$("startBtn").addEventListener("click",function(){startLevel();});
+$("toNegBtn").addEventListener("click",function(){startNeg();});
+$("fightBtn").addEventListener("click",function(){startBattle();});
+$("skipBtn").addEventListener("click",function(){if(S.battle)S.battle.fast=true;});
+document.addEventListener("keydown",function(e){
+ if(e.key==="Enter"||e.key===" "){
+  if(!$("screenIntro").classList.contains("hidden"))$("startBtn").click();
+  else if(!$("screenBuild").classList.contains("hidden")&&!$("toNegBtn").disabled)$("toNegBtn").click();
+  else if(!$("screenNeg").classList.contains("hidden"))$("fightBtn").click();
+  else if(!$("screenBattle").classList.contains("hidden"))$("skipBtn").click();
+  else if(!$("screenResult").classList.contains("hidden"))$("nextBtn").click();
+  e.preventDefault();}});
+resetRun();initIntro();
+</script>
+</body>
+</html>
