@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Tag: Shrinking Floor</title>
+<style>
+  html,body{margin:0;padding:0;background:#10131c;color:#e8ecf5;font-family:system-ui,sans-serif;height:100%;overflow:hidden;-webkit-user-select:none;user-select:none;touch-action:none}
+  #wrap{display:flex;flex-direction:column;align-items:center;height:100%;}
+  #hud{display:flex;gap:14px;align-items:center;padding:6px 10px;font-size:14px;flex-wrap:wrap;justify-content:center}
+  #hud b{color:#ffd24d}
+  canvas{background:#171b27;border-radius:10px;touch-action:none;max-width:96vw;max-height:78vh}
+  #overlay{position:fixed;inset:0;background:rgba(10,12,20,.86);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:20px}
+  #overlay.hidden{display:none}
+  #overlay h1{margin:0;font-size:28px;color:#ffd24d}
+  #overlay p{margin:0;max-width:420px;line-height:1.5;font-size:15px;color:#aeb6c8}
+  button{background:#ffd24d;color:#1a1d27;border:0;border-radius:8px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer}
+  button:active{transform:scale(.96)}
+  .legend{display:flex;gap:16px;font-size:13px;color:#aeb6c8;flex-wrap:wrap;justify-content:center}
+  .dot{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:4px;vertical-align:-1px}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="hud">
+    <span>Ronde <b id="hRound">1</b>/3</span>
+    <span>Tijd <b id="hTime">0</b>s</span>
+    <span>Vrij <b id="hAlive">0</b></span>
+    <span id="hRole"></span>
+    <span>Best <b id="hBest">0</b></span>
+  </div>
+  <canvas id="cv"></canvas>
+</div>
+<div id="overlay">
+  <h1 id="ovTitle">Tag: Shrinking Floor</h1>
+  <p id="ovText">Tikkertje op een verdwijnende vloer! Ontwijk de tikker (rood) en val niet in de gaten. Oranje tegels vallen over 2 seconden weg. Word je getikt, dan moet jij jagen — tik iemand om weer vrij te zijn. Overleef tot er nog 2 spelers over zijn. 3 rondes, steeds sneller!</p>
+  <div class="legend">
+    <span><span class="dot" style="background:#4da6ff"></span>Jij</span>
+    <span><span class="dot" style="background:#ff4d5e"></span>Tikker</span>
+    <span><span class="dot" style="background:#7ee07e"></span>Bot</span>
+    <span><span class="dot" style="background:#e08a3c"></span>Valt zo weg</span>
+  </div>
+  <p>Besturing: WASD / pijltjes, of swipe / tik naast je poppetje op mobiel.</p>
+  <button id="btnStart">Start</button>
+</div>
+<script>
+"use strict";
+const N=8, ROUNDS=3;
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+const $=id=>document.getElementById(id);
+let TILE=56, PAD=8;
+function resize(){
+  const s=Math.min(window.innerWidth*0.96, window.innerHeight*0.78);
+  const px=Math.max(280,Math.min(640,s));
+  cv.width=px*devicePixelRatio; cv.height=px*devicePixelRatio;
+  cv.style.width=px+'px'; cv.style.height=px+'px';
+  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+  TILE=(px-PAD*2)/N;
+}
+window.addEventListener('resize',resize); resize();
+
+// ---- highscore (best round*100+seconds survived) ----
+function loadBest(){
+  try{
+    const v=localStorage.getItem('sfTagBest');
+    if(v===null)return 0;
+    const n=parseInt(v,10);
+    return (Number.isFinite(n)&&n>=0&&n<100000)?n:0;
+  }catch(e){return 0}
+}
+function saveBest(v){ try{localStorage.setItem('sfTagBest',String(v))}catch(e){} }
+let best=loadBest(); $('hBest').textContent=best;
+
+// ---- game state ----
+const TS={OK:0,WARN:1,GONE:2};
+let G=null;
+function roundCfg(r){ // r: 0..2 — oplopende krimpsnelheid
+  return {fallEvery:[5,4,3][r], warn:2, sudden:[32,28,25][r], duration:[45,45,45][r], minFloor:[14,12,10][r]};
+}
+function newRound(r){
+  const cfg=roundCfg(r);
+  const tiles=[]; for(let y=0;y<N;y++){tiles.push(new Array(N).fill(TS.OK));}
+  const players=[];
+  const spots=[];
+  for(let y=0;y<N;y++)for(let x=0;x<N;x++)spots.push([x,y]);
+  for(let i=spots.length-1;i>0;i--){const j=(Math.random()*(i+1))|0;[spots[i],spots[j]]=[spots[j],spots[i]];}
+  const nBots=6;
+  for(let i=0;i<=nBots;i++){
+    const [sx,sy]=spots[i];
+    players.push({x:sx+0.5,y:sy+0.5,alive:true,isPlayer:i===0,it:false,dir:{x:0,y:0},think:0,col:i===0?'#4da6ff':'#7ee07e'});
+  }
+  // tikker = random bot (niet de speler bij start, eerlijker)
+  players[1+((Math.random()*nBots)|0)].it=true;
+  return {round:r,cfg,tiles,players,t:0,fallT:cfg.fallEvery,warnQueue:[],tagCool:0,over:false,survived:0};
+}
+function startGame(){
+  G={roundIdx:0,score:0,state:'play',round:newRound(0),msg:'',msgT:0};
+  $('overlay').classList.add('hidden');
+  last=performance.now();
+}
+
+// ---- floor shrink: kies patroon (rij/kolom/diagonaal) ----
+function pickPattern(R){
+  const cand=[];
+  for(let i=0;i<N;i++){
+    let a=0,b=0,d1=0,d2=0;
+    for(let j=0;j<N;j++){
+      if(R.tiles[i][j]===TS.OK)a++;
+      if(R.tiles[j][i]===TS.OK)b++;
+    }
+    if(a>0)cand.push({type:'row',i,n:a});
+    if(b>0)cand.push({type:'col',i,n:b});
+  }
+  let dA=0,dB=0;
+  for(let k=0;k<N;k++){ if(R.tiles[k][k]===TS.OK)dA++; if(R.tiles[k][N-1-k]===TS.OK)dB++; }
+  if(dA>0)cand.push({type:'d1',i:0,n:dA});
+  if(dB>0)cand.push({type:'d2',i:0,n:dB});
+  if(!cand.length)return null;
+  return cand[(Math.random()*cand.length)|0];
+}
+function patternCells(p){
+  const out=[];
+  for(let k=0;k<N;k++){
+    if(p.type==='row')out.push([k,p.i]);
+    else if(p.type==='col')out.push([p.i,k]);
+    else if(p.type==='d1')out.push([k,k]);
+    else out.push([N-1-k,k]);
+  }
+  return out;
+}
+function okCount(R){let c=0;for(let y=0;y<N;y++)for(let x=0;x<N;x++)if(R.tiles[y][x]!==TS.GONE)c++;return c;}
+function tileAt(R,x,y){
+  const gx=Math.floor(x),gy=Math.floor(y);
+  if(gx<0||gy<0||gx>=N||gy>=N)return TS.GONE;
+  return R.tiles[gy][gx];
+}
+
+// ---- input ----
+const keys={};
+window.addEventListener('keydown',e=>{keys[e.key.toLowerCase()]=true; if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(e.key.toLowerCase()))e.preventDefault();});
+window.addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false;});
+let touchDir=null,tStart=null;
+cv.addEventListener('pointerdown',e=>{tStart={x:e.clientX,y:e.clientY}; setTouchDirFromPoint(e); e.preventDefault();});
+cv.addEventListener('pointermove',e=>{ if(tStart)setTouchDirFromPoint(e); });
+cv.addEventListener('pointerup',()=>{tStart=null;touchDir=null;});
+cv.addEventListener('pointercancel',()=>{tStart=null;touchDir=null;});
+function setTouchDirFromPoint(e){
+  if(!G||G.state!=='play')return;
+  const p=G.round.players[0]; if(!p.alive)return;
+  const r=cv.getBoundingClientRect();
+  const px=PAD+p.x*TILE, py=PAD+p.y*TILE;
+  const dx=(e.clientX-r.left)-px, dy=(e.clientY-r.top)-py;
+  const len=Math.hypot(dx,dy);
+  touchDir=len>10?{x:dx/len,y:dy/len}:null;
+}
+function playerInput(){
+  let dx=0,dy=0;
+  if(keys['arrowleft']||keys['a'])dx-=1;
+  if(keys['arrowright']||keys['d'])dx+=1;
+  if(keys['arrowup']||keys['w'])dy-=1;
+  if(keys['arrowdown']||keys['s'])dy+=1;
+  if(dx||dy){const l=Math.hypot(dx,dy);return{x:dx/l,y:dy/l};}
+  if(touchDir)return touchDir;
+  return {x:0,y:0};
+}
+
+// ---- AI ----
+function dangerAt(R,gx,gy){
+  if(gx<0||gy<0||gx>=N||gy>=N)return 1000;
+  const t=R.tiles[gy][gx];
+  if(t===TS.GONE)return 1000;
+  if(t===TS.WARN)return 60;
+  return 0;
+}
+function nearestSafe(R,p){ // dichtstbijzijnde veilige (OK) tegel
+  let bd=1e9,bx=p.x,by=p.y;
+  for(let y=0;y<N;y++)for(let x=0;x<N;x++){
+    if(R.tiles[y][x]!==TS.OK)continue;
+    const d=Math.hypot(x+0.5-p.x,y+0.5-p.y);
+    if(d<bd){bd=d;bx=x+0.5;by=y+0.5;}
+  }
+  return {x:bx,y:by,d:bd};
+}
+function botThink(R,p){
+  // score 9 richtingen (incl. stilstaan), kies beste
+  const itP=R.players.find(q=>q.alive&&q.it);
+  const safe=nearestSafe(R,p);
+  const onWarn=tileAt(R,p.x,p.y)===TS.WARN;
+  let bestD=null,bestS=-1e9;
+  for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+    const l=Math.hypot(dx,dy)||1;
+    const ux=dx/l,uy=dy/l;
+    let s=0;
+    // lookahead: dichtbij zwaar, ver weg licht (rand-clamp vangt echte val toch af)
+    const wts=[[0.45,1.4],[1.0,0.5],[1.7,0.12]];
+    for(const[st,w]of wts){
+      s-=dangerAt(R,Math.floor(p.x+ux*st),Math.floor(p.y+uy*st))*w;
+    }
+    const nx=p.x+ux*1.1, ny=p.y+uy*1.1;
+    // sta je op warn: WEG hier, blijven staan = dood
+    if(onWarn){
+      s-=Math.hypot(nx-safe.x,ny-safe.y)*300;
+      if(tileAt(R,p.x+ux*0.45,p.y+uy*0.45)===TS.WARN)s-=250; // richting die op warn blijft
+    }
+    else if(itP&&itP!==p&&!p.it){
+      s+=Math.min(Math.hypot(nx-itP.x,ny-itP.y),5)*10; // vlucht
+    }
+    if(p.it&&!onWarn){
+      let nd=1e9;
+      for(const q of R.players){if(q.alive&&!q.it&&q!==p){const d=Math.hypot(q.x-nx,q.y-ny);if(d<nd)nd=d;}}
+      s-=nd*8; // jaag dichtstbijzijnde
+    }
+    s-=(Math.abs(nx-N/2)+Math.abs(ny-N/2))*0.6; // centrum-voorkeur
+    s+=Math.random()*2;
+    if(!dx&&!dy)s-=2; // stilstaan licht ontmoedigen
+    if(s>bestS){bestS=s;bestD={x:(dx||dy)?ux:0,y:(dx||dy)?uy:0};}
+  }
+  p.dir=bestD||{x:0,y:0};
+}
+function moveActor(R,p,dir,speed,dt){
+  const nx=p.x+dir.x*speed*dt, ny=p.y+dir.y*speed*dt;
+  // sta toe over WARN, niet over GONE/rand (clamp per as zodat je langs gaten glijdt)
+  const m=0.18;
+  if(tileAt(R,nx,p.y)!==TS.GONE)p.x=Math.min(N-m,Math.max(m,nx));
+  if(tileAt(R,p.x,ny)!==TS.GONE)p.y=Math.min(N-m,Math.max(m,ny));
+}
+
+// ---- update ----
+function updateRound(R,dt,inputFn){
+  R.t+=dt; R.survived=R.t;
+  if(R.tagCool>0)R.tagCool-=dt;
+  // floor schedule
+  const sudden=R.t>=R.cfg.sudden;
+  R.fallT-=dt;
+  if(R.fallT<=0 && okCount(R)>(sudden?6:R.cfg.minFloor)){
+    if(sudden){
+      // sudden death: 1 random tegel per seconde
+      const opts=[];for(let y=0;y<N;y++)for(let x=0;x<N;x++)if(R.tiles[y][x]===TS.OK)opts.push([x,y]);
+      if(opts.length>2){const [x,y]=opts[(Math.random()*opts.length)|0];R.tiles[y][x]=TS.WARN;R.warnQueue.push({cells:[[x,y]],t:R.cfg.warn});}
+      R.fallT=1;
+    }else{
+      const p=pickPattern(R);
+      if(p){const cells=patternCells(p).filter(([x,y])=>R.tiles[y][x]===TS.OK);
+        for(const[x,y]of cells)R.tiles[y][x]=TS.WARN;
+        R.warnQueue.push({cells,t:R.cfg.warn});}
+      R.fallT=R.cfg.fallEvery;
+    }
+  }
+  for(const w of R.warnQueue){
+    w.t-=dt;
+    if(w.t<=0){for(const[x,y]of w.cells)if(R.tiles[y][x]===TS.WARN)R.tiles[y][x]=TS.GONE;}
+  }
+  R.warnQueue=R.warnQueue.filter(w=>w.t>0);
+  // actors
+  const baseSpeed=2.6+R.round*0.25;
+  for(const p of R.players){
+    if(!p.alive)continue;
+    let dir;
+    if(p.isPlayer){dir=inputFn?inputFn(R,p):playerInput();}
+    else{p.think-=dt; if(p.think<=0){botThink(R,p);p.think=0.15+Math.random()*0.15;} dir=p.dir;}
+    const sp=baseSpeed*(p.it?1.08:1)*(p.isPlayer?1.05:0.9);
+    moveActor(R,p,dir,sp,dt);
+    if(tileAt(R,p.x,p.y)===TS.GONE){p.alive=false;p.it=false;}
+  }
+  // her-assign tikker als die net gevallen is
+  let itP=R.players.find(p=>p.alive&&p.it);
+  const free=R.players.filter(p=>p.alive&&!p.it);
+  if(!itP&&free.length>2){free[(Math.random()*free.length)|0].it=true;itP=R.players.find(p=>p.alive&&p.it);}
+  // tag
+  if(itP&&R.tagCool<=0){
+    for(const q of R.players){
+      if(q.alive&&!q.it&&Math.hypot(q.x-itP.x,q.y-itP.y)<0.55){
+        itP.it=false;q.it=true;R.tagCool=1.2;break;
+      }
+    }
+  }
+  // einde-condities
+  const alive=R.players.filter(p=>p.alive);
+  const me=R.players[0];
+  if(!me.alive)return 'lost';
+  if(alive.length<=2)return me.alive?'won':'lost';
+  if(R.t>=R.cfg.duration)return me.it?'lost':'won'; // tijd om: tikker verliest
+  return null;
+}
+
+// ---- main loop ----
+let last=performance.now();
+function frame(now){
+  const dt=Math.min(0.05,(now-last)/1000); last=now;
+  if(G&&G.state==='play'){
+    const res=updateRound(G.round,dt,null);
+    if(G.msgT>0)G.msgT-=dt;
+    if(res){
+      const pts=Math.round(G.round.survived)+(res==='won'?50:0)+G.roundIdx*100;
+      G.score+=pts;
+      if(res==='won'&&G.roundIdx<ROUNDS-1){
+        G.roundIdx++; G.round=newRound(G.roundIdx);
+        G.msg='Ronde '+(G.roundIdx+1)+'!'; G.msgT=2;
+      }else{
+        G.state='over';
+        if(G.score>best){best=G.score;saveBest(best);$('hBest').textContent=best;}
+        showOver(res==='won');
+      }
+    }
+    drawHUD();
+  }
+  draw();
+  requestAnimationFrame(frame);
+}
+function showOver(won){
+  $('ovTitle').textContent=won?'Gewonnen! Top-2 podium!':'Game over';
+  $('ovText').textContent=(won?'Je overleefde alle 3 de rondes. ':'Je viel in een gat of je was tikker toen de tijd om was. ')+'Score: '+G.score+' — Best: '+best;
+  $('btnStart').textContent='Opnieuw';
+  $('overlay').classList.remove('hidden');
+}
+function drawHUD(){
+  const R=G.round;
+  $('hRound').textContent=G.roundIdx+1;
+  $('hTime').textContent=Math.max(0,Math.ceil(R.cfg.duration-R.t));
+  $('hAlive').textContent=R.players.filter(p=>p.alive).length;
+  const me=R.players[0];
+  $('hRole').textContent=me.alive?(me.it?'JIJ BENT TIKKER — tik iemand!':(R.t>=R.cfg.sudden?'SUDDEN DEATH!':'Vlucht!')):'';
+  $('hRole').style.color=me.it?'#ff4d5e':(R.t>=R.cfg.sudden?'#e08a3c':'#aeb6c8');
+}
+function draw(){
+  const w=cv.width/devicePixelRatio;
+  ctx.clearRect(0,0,w,w);
+  if(!G)return;
+  const R=G.round;
+  for(let y=0;y<N;y++)for(let x=0;x<N;x++){
+    const t=R.tiles[y][x];
+    if(t===TS.GONE)continue;
+    let c=( (x+y)%2 )?'#2a3146':'#323a54';
+    if(t===TS.WARN){
+      const blink=Math.sin(performance.now()/110)>0?'#e08a3c':'#b56a28';
+      c=blink;
+    }
+    ctx.fillStyle=c;
+    ctx.fillRect(PAD+x*TILE+1,PAD+y*TILE+1,TILE-2,TILE-2);
+  }
+  for(const p of R.players){
+    if(!p.alive)continue;
+    const px=PAD+p.x*TILE, py=PAD+p.y*TILE, r=TILE*0.3;
+    ctx.beginPath();ctx.arc(px,py,r,0,7);
+    ctx.fillStyle=p.it?'#ff4d5e':p.col;ctx.fill();
+    if(p.it){ctx.lineWidth=3;ctx.strokeStyle='#ffd24d';ctx.stroke();}
+    if(p.isPlayer){ctx.lineWidth=2;ctx.strokeStyle='#fff';ctx.stroke();}
+    // oogjes
+    ctx.fillStyle='#10131c';
+    ctx.beginPath();ctx.arc(px-r*0.3,py-r*0.15,r*0.16,0,7);ctx.arc(px+r*0.3,py-r*0.15,r*0.16,0,7);ctx.fill();
+  }
+  if(G.msgT>0){
+    ctx.fillStyle='rgba(255,210,77,'+Math.min(1,G.msgT)+')';
+    ctx.font='bold '+(w*0.07|0)+'px system-ui';
+    ctx.textAlign='center';
+    ctx.fillText(G.msg,w/2,w/2);
+  }
+}
+$('btnStart').addEventListener('click',startGame);
+requestAnimationFrame(frame);
+
+// ---- headless selftest (alleen via ?selftest of console: runSelftest()) ----
+function simulate(strategy){
+  let R=newRound(0),ri=0,res=null;
+  const dt=1/30;
+  for(let step=0;step<30*200;step++){
+    res=updateRound(R,dt,(RR,p)=>{
+      if(strategy==='none')return{x:0,y:0};
+      if(strategy==='random'){const a=Math.random()*Math.PI*2;return{x:Math.cos(a),y:Math.sin(a)};}
+      // smart: gebruik bot-heuristiek
+      botThink(RR,p); return p.dir;
+    });
+    if(res==='won'&&ri<ROUNDS-1){ri++;R=newRound(ri);res=null;continue;}
+    if(res)break;
+  }
+  return res||'lost';
+}
+function runSelftest(n){
+  n=n||50;
+  const out={};
+  for(const s of['none','random','smart']){
+    let w=0;for(let i=0;i<n;i++)if(simulate(s)==='won')w++;
+    out[s]=Math.round(100*w/n)+'%';
+  }
+  console.log('selftest winrates (3 volledige rondes):',out);
+  return out;
+}
+window.runSelftest=runSelftest;
+if(location.search.indexOf('selftest')>=0)setTimeout(()=>runSelftest(50),100);
+</script>
+</body>
+</html>
