@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Blast Together</title>
+<style>
+  :root{--bg:#10131c;--panel:#1b2030;--grid:#0c0f17;--cell:#222a3d;--ink:#e8ecf5;--accent:#6cc8ff;--p1:#5b8cff;--p2:#ff6b6b;--ok:#46d18a;--warn:#ffcf5c}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  #app{max-width:520px;margin:0 auto;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:100vh}
+  h1{font-size:20px;margin:4px 0;text-align:center;letter-spacing:.5px}
+  .row{display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap}
+  .scores{display:flex;gap:8px;width:100%}
+  .scorebox{flex:1;background:var(--panel);border-radius:10px;padding:8px;text-align:center;border:2px solid transparent}
+  .scorebox.turn{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  .scorebox b{display:block;font-size:22px}
+  .scorebox small{opacity:.7}
+  #board{width:100%;aspect-ratio:1/1;background:var(--grid);border-radius:12px;touch-action:none;display:block}
+  #tray{display:flex;gap:8px;justify-content:center;min-height:96px}
+  .piece{background:var(--panel);border-radius:10px;padding:6px;cursor:pointer;border:2px solid transparent;touch-action:none}
+  .piece.sel{border-color:var(--accent)}
+  .piece.used{opacity:.25;pointer-events:none}
+  .piece canvas{display:block}
+  button{font-family:inherit;font-size:15px;background:var(--accent);color:#06121f;border:none;border-radius:9px;padding:9px 14px;cursor:pointer;font-weight:600}
+  button.ghost{background:var(--panel);color:var(--ink)}
+  button:disabled{opacity:.4;cursor:default}
+  .pill{background:var(--panel);border-radius:20px;padding:5px 12px;font-size:13px}
+  #msg{text-align:center;min-height:20px;font-size:14px;color:var(--warn)}
+  #emoji{display:flex;gap:6px;justify-content:center;flex-wrap:wrap}
+  #emoji button{background:var(--panel);font-size:18px;padding:4px 8px;border-radius:8px}
+  #floats{position:fixed;inset:0;pointer-events:none;overflow:hidden}
+  .float{position:absolute;font-size:34px;animation:fl 1.4s ease-out forwards}
+  @keyframes fl{from{transform:translateY(0);opacity:1}to{transform:translateY(-80px);opacity:0}}
+  #overlay{position:fixed;inset:0;background:rgba(8,10,16,.86);display:none;align-items:center;justify-content:center;padding:20px;z-index:5}
+  #overlay.show{display:flex}
+  .card{background:var(--panel);border-radius:16px;padding:22px;max-width:380px;width:100%;text-align:center;display:flex;flex-direction:column;gap:12px}
+  .card h2{margin:0;font-size:26px}
+  .modes{display:flex;gap:8px}
+  .modes button{flex:1}
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>&#x1F4A5; Blast Together</h1>
+  <div class="scores">
+    <div class="scorebox" id="sb1"><small id="n1">Speler</small><b id="s1">0</b></div>
+    <div class="scorebox" id="sb2"><small id="n2">AI</small><b id="s2">0</b></div>
+  </div>
+  <div class="row">
+    <span class="pill" id="modepill">Versus</span>
+    <button class="ghost" id="powerBtn" title="Power: bom 3x3">&#x1F4A3; Bom</button>
+    <button class="ghost" id="menuBtn">Menu</button>
+  </div>
+  <canvas id="board" width="500" height="500"></canvas>
+  <div id="tray"></div>
+  <div id="msg">Kies een stuk en plaats het.</div>
+  <div id="emoji">
+    <button data-e="&#x1F525;">&#x1F525;</button><button data-e="&#x1F60E;">&#x1F60E;</button>
+    <button data-e="&#x1F62E;">&#x1F62E;</button><button data-e="&#x1F91D;">&#x1F91D;</button><button data-e="&#x1F605;">&#x1F605;</button>
+  </div>
+</div>
+<div id="floats"></div>
+<div id="overlay" class="show">
+  <div class="card">
+    <h2 id="ovTitle">Blast Together</h2>
+    <p id="ovText">Block puzzle voor twee. Kies een modus.</p>
+    <div class="modes">
+      <button id="btnVersus">&#x2694;&#xFE0F; Versus AI</button>
+      <button id="btnCoop">&#x1F91D; Coop</button>
+    </div>
+    <button class="ghost" id="btnClose" style="display:none">Sluiten</button>
+  </div>
+</div>
+<script>
+"use strict";
+(function(){
+const N=10, CELL=50;
+// ---- seeded RNG (mulberry32) ----
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+const urlParams=new URLSearchParams(location.search);
+const seedParam=parseInt(urlParams.get('seed'),10);
+let RNG;
+function reseed(s){RNG=mulberry32((Number.isFinite(s)?s:(Date.now()>>>0))|0);}
+function rnd(){return RNG();}
+function ri(n){return Math.floor(rnd()*n);}
+
+// ---- piece definitions (polyominoes) as [r,c] offsets ----
+const SHAPES=[
+  [[0,0]],
+  [[0,0],[0,1]],[[0,0],[1,0]],
+  [[0,0],[0,1],[0,2]],[[0,0],[1,0],[2,0]],
+  [[0,0],[0,1],[1,0],[1,1]],
+  [[0,0],[0,1],[0,2],[0,3]],[[0,0],[1,0],[2,0],[3,0]],
+  [[0,0],[0,1],[1,1],[1,2]],[[0,0],[1,0],[1,1],[2,1]],
+  [[0,0],[0,1],[0,2],[1,0]],[[0,0],[0,1],[0,2],[1,2]],
+  [[0,0],[1,0],[1,1],[1,2]],[[0,2],[1,0],[1,1],[1,2]],
+  [[0,0],[0,1],[1,0],[1,1],[2,0]],
+  [[0,1],[1,0],[1,1],[1,2]],
+  [[0,0],[0,1],[0,2],[1,1]]
+];
+const COLORS=['#5b8cff','#ff6b6b','#46d18a','#ffcf5c','#c77dff','#ff9f43','#4dd0e1'];
+
+// ---- state ----
+let S=null;
+function newPiece(){const idx=ri(SHAPES.length);const cells=SHAPES[idx];let mr=0,mc=0;for(const[r,c]of cells){if(r>mr)mr=r;if(c>mc)mc=c;}return{cells,h:mr+1,w:mc+1,color:COLORS[ri(COLORS.length)]};}
+function refillTray(){return [newPiece(),newPiece(),newPiece()];}
+function freshState(mode){
+  const board=[];for(let i=0;i<N*N;i++)board.push(null);
+  return {mode,board,tray:refillTray(),sel:-1,turn:0,score:[0,0],power:[true,true],powerArmed:false,over:false,
+    names:mode==='versus'?['Jij','AI']:['Beurt A','Beurt B']};
+}
+
+// ---- board helpers ----
+function canPlaceAt(board,piece,r,c){
+  for(const[dr,dc]of piece.cells){const rr=r+dr,cc=c+dc;if(rr<0||cc<0||rr>=N||cc>=N)return false;if(board[rr*N+cc])return false;}
+  return true;
+}
+function anyPlacement(board,piece){
+  for(let r=0;r<=N-piece.h;r++)for(let c=0;c<=N-piece.w;c++)if(canPlaceAt(board,piece,r,c))return true;
+  return false;
+}
+function trayHasMove(board,tray){for(const p of tray)if(p&&anyPlacement(board,p))return true;return false;}
+function place(board,piece,r,c){for(const[dr,dc]of piece.cells)board[(r+dr)*N+(c+dc)]=piece.color;}
+function clearLines(board){
+  const fullR=[],fullC=[];
+  for(let r=0;r<N;r++){let f=true;for(let c=0;c<N;c++)if(!board[r*N+c]){f=false;break;}if(f)fullR.push(r);}
+  for(let c=0;c<N;c++){let f=true;for(let r=0;r<N;r++)if(!board[r*N+c]){f=false;break;}if(f)fullC.push(c);}
+  for(const r of fullR)for(let c=0;c<N;c++)board[r*N+c]=null;
+  for(const c of fullC)for(let r=0;r<N;r++)board[r*N+c]=null;
+  return fullR.length+fullC.length;
+}
+function bomb3x3(board,cr,cc){let cleared=0;for(let r=cr-1;r<=cr+1;r++)for(let c=cc-1;c<=cc+1;c++){if(r>=0&&c>=0&&r<N&&c<N&&board[r*N+c]){board[r*N+c]=null;cleared++;}}return cleared;}
+
+// scoring: cells placed + clear bonus
+function scoreFor(cellsPlaced,lines){return cellsPlaced + lines*N*2 + (lines>1?lines*8:0);}
+
+// ---- flood-fill: count connected empty regions larger than threshold ----
+// Used by versus AI to penalize positions that leave many open pockets for the opponent
+function countOpenRegions(board,minSize){
+  const visited=new Uint8Array(N*N);
+  let regions=0;
+  for(let start=0;start<N*N;start++){
+    if(board[start]||visited[start])continue;
+    // BFS
+    const queue=[start];visited[start]=1;let size=0;
+    while(queue.length){const idx=queue.pop();size++;
+      const r=Math.floor(idx/N),c=idx%N;
+      const nb=[r>0?(r-1)*N+c:-1,r<N-1?(r+1)*N+c:-1,c>0?r*N+c-1:-1,c<N-1?r*N+c+1:-1];
+      for(const n of nb)if(n>=0&&!board[n]&&!visited[n]){visited[n]=1;queue.push(n);}
+    }
+    if(size>=minSize)regions++;
+  }
+  return regions;
+}
+// FIX P1-b: count open runs of >= 4 consecutive empty cells in rows/cols
+// These are easy placements for the opponent - penalise them in versus mode
+function countOpenRuns(b){
+  let openRuns=0;
+  for(let r2=0;r2<N;r2++){let streak=0;for(let c2=0;c2<N;c2++){if(!b[r2*N+c2])streak++;else streak=0;if(streak>=4){openRuns++;streak=0;}}}
+  for(let c2=0;c2<N;c2++){let streak=0;for(let r2=0;r2<N;r2++){if(!b[r2*N+c2])streak++;else streak=0;if(streak>=4){openRuns++;streak=0;}}}
+  return openRuns;
+}
+
+// ---- AI: pick (pieceIdx,r,c) by greedy heuristic with mild randomness ----
+// FIX P1-b: evalMove in versus mode uses heavier region/run/empty penalties so AI
+// blocks the opponent more effectively. Randomness reduced from *6 to *2.
+function evalMove(board,piece,r,c,versusMode){
+  const b=board.slice();place(b,piece,r,c);
+  const lines=clearLines(b);
+  let filled=0,iso=0;
+  const isoPenaltyHigh = versusMode ? 18 : 6;
+  const isoPenaltyMid  = versusMode ? 5  : 1.5;
+  for(let r2=0;r2<N;r2++)for(let c2=0;c2<N;c2++){
+    if(b[r2*N+c2]){filled++;continue;}
+    let blocked=0;
+    if(c2===0||b[r2*N+c2-1])blocked++;
+    if(c2===N-1||b[r2*N+c2+1])blocked++;
+    if(r2===0||b[(r2-1)*N+c2])blocked++;
+    if(r2===N-1||b[(r2+1)*N+c2])blocked++;
+    if(blocked>=4)iso+=isoPenaltyHigh; else if(blocked===3)iso+=isoPenaltyMid;
+  }
+  let regionPenalty=0,openRunPenalty=0,emptyPenalty=0;
+  if(versusMode){
+    regionPenalty=countOpenRegions(b,4)*6;  // FIX P1-b: boosted from *3
+    openRunPenalty=countOpenRuns(b)*6;       // FIX P1-b: new - straf open runs >= 4
+    let empty=0;for(let i=0;i<N*N;i++)if(!b[i])empty++;
+    emptyPenalty=empty*0.1;                  // FIX P1-b: new - straf totaal lege ruimte
+  }
+  return lines*120 - filled*1.0 - iso - regionPenalty - openRunPenalty - emptyPenalty;
+}
+function aiChoose(state){
+  const versusMode=(state.mode==='versus');
+  let best=null,bestScore=-1e9;
+  for(let pi=0;pi<state.tray.length;pi++){const p=state.tray[pi];if(!p)continue;
+    for(let r=0;r<=N-p.h;r++)for(let c=0;c<=N-p.w;c++){
+      if(!canPlaceAt(state.board,p,r,c))continue;
+      let sc=evalMove(state.board,p,r,c,versusMode)+rnd()*2; // FIX P1-b: reduced from *6 to *2
+      if(sc>bestScore){bestScore=sc;best={pi,r,c};}
+    }}
+  return best;
+}
+
+// =================== SIMULATION (selftest) ===================
+// random strategy: pick a random valid placement
+function pickRandom(state){
+  const opts=[];
+  for(let pi=0;pi<state.tray.length;pi++){const p=state.tray[pi];if(!p)continue;
+    for(let r=0;r<=N-p.h;r++)for(let c=0;c<=N-p.w;c++)if(canPlaceAt(state.board,p,r,c))opts.push({pi,r,c});}
+  if(!opts.length)return null;return opts[ri(opts.length)];
+}
+// apply a chosen move to a sim-state, return points scored
+function applyMove(st,mv,player){
+  const p=st.tray[mv.pi];const cellsPlaced=p.cells.length;
+  place(st.board,p,mv.r,mv.c);
+  const lines=clearLines(st.board);
+  st.tray[mv.pi]=null;
+  if(st.tray.every(x=>!x))st.tray=refillTray();
+  st.score[player]+=scoreFor(cellsPlaced,lines);
+  return true;
+}
+// Versus sim: playerStrat for P0, aiChoose for P1. Returns winner index or -1 tie/draw, plus who stalled.
+function simVersus(seed,p0strat){
+  reseed(seed);
+  const st=freshState('versus');
+  let turn=0,guard=0;
+  while(guard++<2000){
+    const mover=turn%2;
+    const mv=mover===0?p0strat(st):aiChoose(st);
+    if(!mv){ // current mover can't place -> opponent gets points, game over
+      return {loser:mover,winner:1-mover,score:st.score.slice()};
+    }
+    applyMove(st,mv,mover);
+    if(!trayHasMove(st.board,st.tray)){
+      // after move, fresh trayHasMove false means next refill already happened; double-check
+    }
+    turn++;
+  }
+  return {loser:-1,winner:-1,score:st.score.slice()};
+}
+// Coop sim (endless): single strat fills both turns, count total survived placements
+function simCoop(seed,strat){
+  reseed(seed);
+  const st=freshState('coop');let guard=0;
+  while(guard<5000){
+    const mv=strat(st);
+    if(!mv)break;
+    applyMove(st,mv,0);guard++;
+  }
+  return {placements:guard,total:st.score[0]};
+}
+function runSelftest(seeds){
+  let aiWins=0,randWins=0,greedyWins=0,ties=0;
+  let coopTotal=0,coopMin=1e9,coopMax=0;
+  for(let s=0;s<seeds;s++){
+    // random player vs AI
+    let r=simVersus(s,pickRandom);
+    if(r.winner===1)aiWins++;else if(r.winner===0)randWins++;else ties++;
+    // greedy player (uses aiChoose logic) vs AI
+    let g=simVersus(s+100000,aiChoose);
+    if(g.winner===0)greedyWins++;
+    // coop endless
+    let c=simCoop(s,pickRandom);
+    coopTotal+=c.placements;if(c.placements<coopMin)coopMin=c.placements;if(c.placements>coopMax)coopMax=c.placements;
+  }
+  const out={
+    seeds,
+    randomVsAI:{aiWinrate:+(aiWins/seeds).toFixed(3),randomWinrate:+(randWins/seeds).toFixed(3),ties},
+    greedyVsAI:{greedyWinrate:+(greedyWins/seeds).toFixed(3)},
+    coopEndless:{avgPlacements:+(coopTotal/seeds).toFixed(1),min:coopMin,max:coopMax}
+  };
+  return out;
+}
+
+// =================== RENDER ===================
+const board=document.getElementById('board');
+const ctx=board.getContext('2d');
+function drawCell(g,r,c,color,ghost){
+  const x=c*CELL,y=r*CELL;
+  if(color){g.fillStyle=color;g.globalAlpha=ghost?0.4:1;roundRect(g,x+2,y+2,CELL-4,CELL-4,6);g.fill();
+    g.globalAlpha=ghost?0.4:1;g.fillStyle='rgba(255,255,255,.18)';roundRect(g,x+4,y+4,CELL-8,(CELL-8)/2,5);g.fill();g.globalAlpha=1;}
+  else{g.fillStyle='#222a3d';roundRect(g,x+2,y+2,CELL-4,CELL-4,6);g.fill();}
+}
+function roundRect(g,x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath();}
+let hover=null; // {r,c,valid}
+function render(){
+  ctx.clearRect(0,0,500,500);
+  ctx.fillStyle='#0c0f17';ctx.fillRect(0,0,500,500);
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++)drawCell(ctx,r,c,S.board[r*N+c],false);
+  // ghost preview
+  if(hover&&S.sel>=0&&S.tray[S.sel]){
+    const p=S.tray[S.sel];const ok=S.powerArmed?true:canPlaceAt(S.board,p,hover.r,hover.c);
+    if(S.powerArmed){ // bomb cursor 3x3
+      for(let r=hover.r-1;r<=hover.r+1;r++)for(let c=hover.c-1;c<=hover.c+1;c++)if(r>=0&&c>=0&&r<N&&c<N){ctx.strokeStyle='#ffcf5c';ctx.lineWidth=3;roundRect(ctx,c*CELL+2,r*CELL+2,CELL-4,CELL-4,6);ctx.stroke();}
+    } else {
+      for(const[dr,dc]of p.cells){const rr=hover.r+dr,cc=hover.c+dc;if(rr<N&&cc<N)drawCell(ctx,rr,cc,ok?p.color:'#ff6b6b',true);}
+    }
+  }
+  renderTray();
+}
+function renderTray(){
+  const tray=document.getElementById('tray');tray.innerHTML='';
+  S.tray.forEach((p,i)=>{
+    const div=document.createElement('div');div.className='piece'+(i===S.sel?' sel':'')+(p?'':' used');
+    if(p){
+      const cv=document.createElement('canvas');const sz=18;cv.width=p.w*sz;cv.height=p.h*sz;
+      const g=cv.getContext('2d');
+      for(const[dr,dc]of p.cells){g.fillStyle=p.color;g.fillRect(dc*sz+1,dr*sz+1,sz-2,sz-2);}
+      div.appendChild(cv);
+      div.addEventListener('click',()=>{S.sel=i;S.powerArmed=false;updatePowerBtn();render();});
+    }
+    tray.appendChild(div);
+  });
+}
+function updateScores(){
+  document.getElementById('s1').textContent=S.score[0];
+  document.getElementById('s2').textContent=S.score[1];
+  document.getElementById('n1').textContent=S.names[0];
+  document.getElementById('n2').textContent=S.names[1];
+  document.getElementById('sb1').classList.toggle('turn',S.turn===0);
+  document.getElementById('sb2').classList.toggle('turn',S.turn===1);
+  document.getElementById('modepill').textContent=S.mode==='versus'?'Versus AI':'Coop';
+}
+function updatePowerBtn(){
+  const btn=document.getElementById('powerBtn');
+  btn.disabled=!S.power[S.turn]||(S.mode==='versus'&&S.turn===1);
+  btn.textContent=S.powerArmed?'Richten...':(S.power[S.turn]?'Bom':'Op');
+  btn.classList.toggle('sel',S.powerArmed);
+}
+function msg(t){document.getElementById('msg').textContent=t;}
+function floatText(t){
+  const f=document.createElement('div');f.className='float';f.textContent=t;
+  f.style.left=(40+ri(60))+'%';f.style.top=(30+ri(20))+'%';
+  document.getElementById('floats').appendChild(f);setTimeout(()=>f.remove(),1400);
+}
+
+// =================== TURN FLOW ===================
+function endTurn(){
+  // refill if empty
+  if(S.tray.every(x=>!x))S.tray=refillTray();
+  S.sel=-1;S.powerArmed=false;
+  // check if next mover can move
+  S.turn=1-S.turn;
+  updateScores();updatePowerBtn();render();
+  if(!canCurrentMove()){gameOver(S.turn);return;}
+  if(S.mode==='versus'&&S.turn===1){setTimeout(aiTurn,420);}
+  else msg(S.mode==='versus'?'Jouw beurt - kies een stuk.':'Beurt '+S.names[S.turn]+' - kies een stuk.');
+}
+function canCurrentMove(){return trayHasMove(S.board,S.tray)|| (S.power[S.turn] && (S.mode==='coop'||S.turn===0));}
+function doPlace(p,r,c){
+  const cellsPlaced=p.cells.length;
+  place(S.board,p,r,c);
+  const lines=clearLines(S.board);
+  const pts=scoreFor(cellsPlaced,lines);
+  S.score[S.turn]+=pts;
+  if(lines>0)floatText(lines>1?lines+'x CLEAR!':'Clear +'+pts);
+  S.tray[S.sel]=null;
+  endTurn();
+}
+function doBomb(r,c){
+  const cleared=bomb3x3(S.board,r,c);
+  S.power[S.turn]=false;S.powerArmed=false;
+  S.score[S.turn]+=cleared;floatText('Boom! +'+cleared);
+  endTurn();
+}
+function aiTurn(){
+  if(S.over)return;
+  msg('AI denkt...');
+  const mv=aiChoose(S);
+  if(!mv){ // AI uses bomb if available else loses
+    if(S.power[1]){ // bomb a dense spot
+      let best=-1,br=1,bc=1;
+      for(let r=1;r<N-1;r++)for(let c=1;c<N-1;c++){let cnt=0;for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++)if(S.board[(r+dr)*N+(c+dc)])cnt++;if(cnt>best){best=cnt;br=r;bc=c;}}
+      const cleared=bomb3x3(S.board,br,bc);S.power[1]=false;S.score[1]+=cleared;floatText('AI +'+cleared);endTurn();return;
+    }
+    gameOver(1);return;
+  }
+  const p=S.tray[mv.pi];S.sel=mv.pi;
+  place(S.board,p,mv.r,mv.c);
+  const lines=clearLines(S.board);
+  S.score[1]+=scoreFor(p.cells.length,lines);
+  if(lines>0)floatText('AI Clear!');
+  S.tray[mv.pi]=null;
+  endTurn();
+}
+// FIX P1-b part 2: gameOver now shows both scores and adds a moral-victory note when applicable
+function gameOver(loser){
+  S.over=true;
+  const ov=document.getElementById('overlay');
+  document.getElementById('btnClose').style.display='';
+  document.getElementById('ovText').style.display='';
+  let title,text;
+  if(S.mode==='versus'){
+    const winner=1-loser;
+    const youScore=S.score[0],aiScore=S.score[1];
+    if(loser===0){
+      // Player lost (stalled)
+      title='AI wint';
+      text='Je liep vast. Jij: '+youScore+' - AI: '+aiScore+'.';
+      if(youScore>aiScore)text+=' Maar jij scoorde meer - kleine morele overwinning?';
+    } else {
+      // AI lost (stalled)
+      title='Jij wint!';
+      text='AI liep vast. Jij: '+youScore+' - AI: '+aiScore+'.';
+      if(aiScore>youScore)text+=' (AI scoorde meer punten, maar jij hebt gewonnen!)';
+    }
+    saveBest('versus',youScore);
+  } else {
+    title='Game over';text='Gezamenlijke score: '+(S.score[0]+S.score[1])+'. Best: '+loadBest('coop');
+    saveBest('coop',S.score[0]+S.score[1]); // FIX P2: gebruik beide spelers' scores
+  }
+  document.getElementById('ovTitle').textContent=title;
+  document.getElementById('ovText').textContent=text;
+  document.querySelector('.modes').style.display='flex';
+  ov.classList.add('show');
+}
+
+// =================== INPUT ===================
+function evtCell(ev){
+  const rect=board.getBoundingClientRect();
+  const px=(ev.clientX-rect.left)/rect.width*500;
+  const py=(ev.clientY-rect.top)/rect.height*500;
+  let c=Math.floor(px/CELL),r=Math.floor(py/CELL);
+  // anchor piece so pointer is near piece center-top for usability
+  if(r<0)r=0;if(c<0)c=0;if(r>=N)r=N-1;if(c>=N)c=N-1;
+  return {r,c};
+}
+board.addEventListener('pointermove',ev=>{if(S.over)return;hover=evtCell(ev);render();});
+board.addEventListener('pointerleave',()=>{hover=null;render();});
+board.addEventListener('pointerdown',ev=>{
+  if(S.over)return;
+  if(S.mode==='versus'&&S.turn===1)return; // AI's turn
+  const cell=evtCell(ev);hover=cell;
+  if(S.powerArmed){doBomb(cell.r,cell.c);return;}
+  if(S.sel<0||!S.tray[S.sel]){msg('Kies eerst een stuk uit de tray.');return;}
+  const p=S.tray[S.sel];
+  if(canPlaceAt(S.board,p,cell.r,cell.c)){doPlace(p,cell.r,cell.c);}
+  else{msg('Past hier niet - probeer een andere plek.');}
+});
+// keyboard: arrows move a cursor, 1-3 select piece, space place, b bomb
+let kbCur={r:0,c:0};
+window.addEventListener('keydown',ev=>{
+  if(S.over)return;if(S.mode==='versus'&&S.turn===1)return;
+  let used=true;
+  if(ev.key==='ArrowUp')kbCur.r=Math.max(0,kbCur.r-1);
+  else if(ev.key==='ArrowDown')kbCur.r=Math.min(N-1,kbCur.r+1);
+  else if(ev.key==='ArrowLeft')kbCur.c=Math.max(0,kbCur.c-1);
+  else if(ev.key==='ArrowRight')kbCur.c=Math.min(N-1,kbCur.c+1);
+  else if(ev.key==='1'||ev.key==='2'||ev.key==='3'){const i=+ev.key-1;if(S.tray[i]){S.sel=i;S.powerArmed=false;updatePowerBtn();}}
+  // FIX P1-a: keyboard 'b' now checks S.power[S.turn] directly instead of DOM disabled attribute
+  else if(ev.key==='b'||ev.key==='B'){if(S&&S.power[S.turn])togglePower();}
+  else if(ev.key===' '||ev.key==='Enter'){
+    if(S.powerArmed){doBomb(kbCur.r,kbCur.c);}
+    else if(S.sel>=0&&S.tray[S.sel]&&canPlaceAt(S.board,S.tray[S.sel],kbCur.r,kbCur.c))doPlace(S.tray[S.sel],kbCur.r,kbCur.c);
+    else msg('Kan daar niet plaatsen.');
+  } else used=false;
+  if(used){ev.preventDefault();hover={r:kbCur.r,c:kbCur.c};render();}
+});
+// FIX P1-a: togglePower now has an explicit state guard at the top
+function togglePower(){
+  if(!S||S.over||!S.power[S.turn])return; // guard: block if no power available or game over
+  S.powerArmed=!S.powerArmed;if(S.powerArmed){S.sel=-1;msg('Bom gewapend - klik een 3x3 doel.');}else msg('Bom uit.');updatePowerBtn();render();
+}
+document.getElementById('powerBtn').addEventListener('click',togglePower);
+document.getElementById('menuBtn').addEventListener('click',()=>{document.getElementById('overlay').classList.add('show');document.getElementById('btnClose').style.display=S?'':'none';});
+document.getElementById('emoji').addEventListener('click',ev=>{if(ev.target.dataset.e)floatText(ev.target.dataset.e);});
+
+// =================== localStorage best ===================
+// FIX P3: loadBest clamps to max 9999999; saveBest only stores if val <= 9999999
+function loadBest(mode){try{const v=parseInt(localStorage.getItem('bt_best_'+mode),10);return Number.isFinite(v)?Math.min(v,9999999):0;}catch(e){return 0;}}
+function saveBest(mode,val){try{if(!Number.isFinite(val))return;if(val>9999999)return;const cur=loadBest(mode);if(val>cur)localStorage.setItem('bt_best_'+mode,String(val));}catch(e){}}
+
+// =================== boot ===================
+function start(mode){
+  reseed(Number.isFinite(seedParam)?seedParam:undefined);
+  S=freshState(mode);hover=null;kbCur={r:0,c:0};
+  document.getElementById('overlay').classList.remove('show');
+  document.getElementById('powerBtn').textContent='Bom';
+  updateScores();updatePowerBtn();render();
+  msg(mode==='versus'?'Versus AI - jouw beurt.':'Coop - plaats samen zo veel mogelijk.');
+}
+document.getElementById('btnVersus').addEventListener('click',()=>start('versus'));
+document.getElementById('btnCoop').addEventListener('click',()=>start('coop'));
+document.getElementById('btnClose').addEventListener('click',()=>{document.getElementById('overlay').classList.remove('show');});
+
+// initial draw (empty)
+reseed(Number.isFinite(seedParam)?seedParam:undefined);
+S=freshState('versus');render();updateScores();
+
+// dev selftest
+if(urlParams.get('test')==='1'){
+  const res=runSelftest(300);
+  console.log('=== Blast Together selftest (300 seeds) ===');
+  console.log(JSON.stringify(res,null,2));
+  const m=document.getElementById('msg');m.style.color='#46d18a';
+  m.textContent='Selftest: AI winrate '+res.randomVsAI.aiWinrate+' vs random, greedy beats AI '+res.greedyVsAI.greedyWinrate+'. Zie console.';
+}
+window.__BT_selftest=runSelftest;
+})();
+</script>
+</body>
+</html>
