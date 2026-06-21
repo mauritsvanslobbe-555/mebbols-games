@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Temple Run: Reverse</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { height:100%; background:#1a0e24; font-family:'Segoe UI',system-ui,sans-serif; overflow:hidden; }
+  #wrap { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
+  canvas { display:block; background:#2a1840; touch-action:none; }
+  .overlay { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:rgba(20,8,32,.88); color:#fff; text-align:center; padding:24px; z-index:20; }
+  .overlay.hidden { display:none; }
+  .overlay h1 { font-size:clamp(28px,7vw,52px); color:#ffd34d; text-shadow:0 3px 0 #7a2e00; margin-bottom:8px; }
+  .overlay h2 { font-size:clamp(22px,6vw,40px); margin-bottom:12px; }
+  .overlay p { max-width:440px; line-height:1.5; margin:6px 0; font-size:clamp(13px,3.6vw,16px); color:#e8d8ff; }
+  .btn { margin-top:18px; padding:14px 34px; font-size:20px; font-weight:700; border:none; border-radius:14px;
+    background:#ff5c8a; color:#fff; cursor:pointer; box-shadow:0 5px 0 #b3194a; }
+  .btn:active { transform:translateY(3px); box-shadow:0 2px 0 #b3194a; }
+  .keys { font-size:13px; color:#b9a6d6; margin-top:14px; }
+  /* HUD */
+  #hud { position:absolute; inset:0; pointer-events:none; z-index:10; color:#fff; }
+  #topbar { position:absolute; top:8px; left:8px; right:8px; display:flex; justify-content:space-between; font-weight:700; text-shadow:0 2px 3px #000; }
+  #meterWrap { position:absolute; top:42px; left:8px; right:8px; }
+  #meterLabel { font-size:12px; text-shadow:0 1px 2px #000; margin-bottom:2px; }
+  #meterBar { height:14px; background:#3a2a55; border-radius:8px; overflow:hidden; border:2px solid #0008; }
+  #meterFill { height:100%; width:50%; background:linear-gradient(90deg,#37d67a,#ffd34d,#ff5c5c); transition:width .08s linear; }
+  #btns { position:absolute; bottom:18px; right:14px; display:flex; gap:14px; pointer-events:auto; }
+  .pbtn { width:74px; height:74px; border-radius:50%; border:none; font-size:13px; font-weight:800; color:#fff;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; box-shadow:0 4px 0 #0006; cursor:pointer; position:relative; overflow:hidden; }
+  .pbtn .lbl { font-size:22px; }
+  #roarBtn { background:#9b4dff; } #sprintBtn { background:#ff8c1a; }
+  .pbtn:active { transform:translateY(2px); }
+  .cd { position:absolute; inset:0; background:rgba(0,0,0,.55); transform-origin:bottom; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+
+  <div id="hud">
+    <div id="topbar">
+      <div id="score">Afstand: 0m</div>
+      <div id="best">Beste: 0</div>
+    </div>
+    <div id="meterWrap">
+      <div id="meterLabel">Afstand tot speler</div>
+      <div id="meterBar"><div id="meterFill"></div></div>
+    </div>
+    <div id="btns">
+      <button id="roarBtn" class="pbtn"><span class="lbl">ROAR</span>Q<div class="cd" id="roarCd"></div></button>
+      <button id="sprintBtn" class="pbtn"><span class="lbl">SPRINT</span>E<div class="cd" id="sprintCd"></div></button>
+    </div>
+  </div>
+
+  <div id="startOv" class="overlay">
+    <h1>TEMPLE RUN: REVERSE</h1>
+    <p>Jij bent het <b>monster</b>. De speler rent voor zijn leven — jaag hem op en <b>vang</b> hem!</p>
+    <p>Wissel van baan, spring en slide over obstakels. Gebruik <b>ROAR</b> om hem te laten struikelen en <b>SPRINT</b> om in te halen.</p>
+    <p>Raak je obstakels, dan val je terug. Laat hem te ver ontsnappen = game over.</p>
+    <div class="keys">Toetsen: pijltjes/WASD = baan/jump/slide · Spatie = jump · Shift = slide · Q = roar · E = sprint<br>Mobiel: veeg links/rechts/omhoog/omlaag · tik de knoppen</div>
+    <button class="btn" id="startBtn">START DE JACHT</button>
+  </div>
+
+  <div id="endOv" class="overlay hidden">
+    <h2 id="endTitle">Game Over</h2>
+    <p id="endMsg"></p>
+    <button class="btn" id="restartBtn">OPNIEUW</button>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+var canvas=document.getElementById('c'), ctx=canvas.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1,2);
+  W=window.innerWidth; H=window.innerHeight;
+  canvas.style.width=W+'px'; canvas.style.height=H+'px';
+  canvas.width=Math.floor(W*DPR); canvas.height=Math.floor(H*DPR);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize); resize();
+
+// ---- localStorage best ----
+var BEST=0;
+try{ BEST=parseInt(localStorage.getItem('tr_reverse_best')||'0',10)||0; }catch(e){}
+function saveBest(){ try{ localStorage.setItem('tr_reverse_best',String(BEST)); }catch(e){} }
+
+var LANES=[-1,0,1];               // left, mid, right
+var ROAR_CD=8, SPRINT_CD=15, SPRINT_DUR=2.5;
+var state, running=false, lastT=0;
+
+function newState(){
+  return {
+    phase:'play',
+    dist:0,                       // distance travelled (m) -> score
+    speed:9,                      // world base speed (monster forward)
+    gap:50,                       // metres player is ahead of monster (win meter)
+    catches:0,
+    // monster
+    lane:1, x:0,                  // x = horizontal pos in lane units
+    targetLane:1,
+    y:0, vy:0, sliding:0,         // jump height & slide timer
+    sprint:0, sprintCd:0, roarCd:0,
+    // ai player
+    pSpeed:9.2, pStumble:0,
+    obstacles:[],                 // {z, lane, type:'jump'|'slide', hit}
+    spawnZ:30, t:0
+  };
+}
+
+// ---- input ----
+function changeLane(d){
+  if(state.phase!=='play')return;
+  state.targetLane=Math.max(0,Math.min(2,state.targetLane+d));
+}
+function jump(){ if(state.phase==='play'&&state.y===0&&state.sliding<=0){ state.vy=11; } }
+function slide(){ if(state.phase==='play'&&state.y===0&&state.sliding<=0){ state.sliding=0.55; } }
+function roar(){ if(state.phase==='play'&&state.roarCd<=0){ state.roarCd=ROAR_CD; if(state.gap<22){ state.pStumble=1.1; } } }
+function sprint(){ if(state.phase==='play'&&state.sprintCd<=0){ state.sprintCd=SPRINT_CD; state.sprint=SPRINT_DUR; } }
+
+window.addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase();
+  if(k==='arrowleft'||k==='a')changeLane(-1);
+  else if(k==='arrowright'||k==='d')changeLane(1);
+  else if(k==='arrowup'||k==='w'||k===' ')jump();
+  else if(k==='arrowdown'||k==='s'||k==='shift')slide();
+  else if(k==='q')roar();
+  else if(k==='e')sprint();
+  else return;
+  e.preventDefault();
+},{passive:false});
+
+// touch / swipe
+var tsx=0,tsy=0,tactive=false;
+canvas.addEventListener('pointerdown',function(e){ tsx=e.clientX; tsy=e.clientY; tactive=true; });
+canvas.addEventListener('pointerup',function(e){
+  if(!tactive)return; tactive=false;
+  var dx=e.clientX-tsx, dy=e.clientY-tsy, ax=Math.abs(dx), ay=Math.abs(dy);
+  if(ax<24&&ay<24){ jump(); return; }              // tap = jump
+  if(ax>ay){ changeLane(dx>0?1:-1); } else { if(dy<0)jump(); else slide(); }
+});
+document.getElementById('roarBtn').addEventListener('click',roar);
+document.getElementById('sprintBtn').addEventListener('click',sprint);
+
+// ---- update ----
+function spawnObstacle(){
+  state.obstacles.push({
+    z: state.spawnZ,
+    lane: Math.floor(Math.random()*3),
+    type: Math.random()<0.5?'jump':'slide',
+    hit:false
+  });
+  state.spawnZ += 14 + Math.random()*10;
+}
+
+function update(dt){
+  var s=state; if(s.phase!=='play')return;
+  s.t+=dt;
+  // difficulty ramp
+  s.speed = 9 + s.dist*0.012;
+  var spd = s.speed * (s.sprint>0?2:1);
+
+  // distance / score
+  s.dist += spd*dt;
+
+  // cooldowns
+  if(s.roarCd>0)s.roarCd-=dt;
+  if(s.sprintCd>0)s.sprintCd-=dt;
+  if(s.sprint>0)s.sprint-=dt;
+  if(s.pStumble>0)s.pStumble-=dt;
+
+  // lane lerp
+  var tx=LANES[s.targetLane];
+  s.x += (tx-s.x)*Math.min(1,dt*12);
+  s.lane = s.targetLane;
+
+  // jump physics
+  if(s.y>0||s.vy!==0){ s.vy-=34*dt; s.y+=s.vy*dt; if(s.y<0){ s.y=0; s.vy=0; } }
+  if(s.sliding>0)s.sliding-=dt;
+
+  // AI player movement: base speed ramps, stumbles slow him
+  s.pSpeed = 9.2 + s.dist*0.011;
+  var pEff = s.pStumble>0 ? s.pSpeed*0.45 : s.pSpeed;
+  // gap closes by (monsterSpeed - playerSpeed)
+  s.gap += (pEff - spd)*dt;
+  if(s.gap<0)s.gap=0;
+
+  // move obstacles toward monster (relative)
+  for(var i=0;i<s.obstacles.length;i++){
+    var o=s.obstacles[i]; o.z -= spd*dt;
+    // collision when obstacle passes monster (z near 0)
+    if(!o.hit && o.z<0.8 && o.z>-0.8 && o.lane===s.lane){
+      var safe = (o.type==='jump' && s.y>1.6) || (o.type==='slide' && s.sliding>0);
+      if(!safe){ o.hit=true; s.gap+=9; s.dist=Math.max(0,s.dist-3); }
+      else o.hit=true;
+    }
+  }
+  s.obstacles = s.obstacles.filter(function(o){ return o.z>-3; });
+  while(s.spawnZ - s.dist*0 < 60 && s.spawnZ < 60+ (s.obstacles.length?0:0)){ break; }
+  if(s.obstacles.length===0 || s.obstacles[s.obstacles.length-1].z<46) spawnObstacle();
+
+  // win / lose
+  if(s.gap<=1.2){ // caught!
+    s.catches++; BEST=Math.max(BEST,Math.floor(s.dist)); saveBest();
+    s.phase='win'; endGame(true);
+  } else if(s.gap>=85){
+    BEST=Math.max(BEST,Math.floor(s.dist)); saveBest();
+    s.phase='lose'; endGame(false);
+  }
+}
+
+// ---- render helpers (pseudo-3D) ----
+function proj(z, laneX, height){
+  // z: depth (0 near monster, larger = far). returns screen x,y,scale
+  var horizonY=H*0.30, near=H*1.02;
+  var t=z/60; if(t<0)t=0; if(t>1)t=1;
+  var sy=horizonY + (near-horizonY)*(1-t);
+  var scale=1-t*0.86;
+  var roadW=W*0.92*scale;
+  var sx=W/2 + laneX*(roadW*0.30) ;
+  sy -= height*26*scale;
+  return {x:sx,y:sy,scale:scale};
+}
+
+function render(){
+  var s=state;
+  // sky
+  var g=ctx.createLinearGradient(0,0,0,H*0.4);
+  g.addColorStop(0,'#3a1d5c'); g.addColorStop(1,'#7a3b8f');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H*0.4);
+  // ground
+  ctx.fillStyle='#241433'; ctx.fillRect(0,H*0.3,W,H);
+
+  // road (converging trapezoid)
+  var horizonY=H*0.30;
+  ctx.fillStyle='#4a3566';
+  ctx.beginPath();
+  var topW=W*0.10, botW=W*0.92;
+  ctx.moveTo(W/2-topW/2,horizonY); ctx.lineTo(W/2+topW/2,horizonY);
+  ctx.lineTo(W/2+botW/2,H); ctx.lineTo(W/2-botW/2,H); ctx.closePath(); ctx.fill();
+
+  // lane dividers
+  ctx.strokeStyle='rgba(255,255,255,.18)'; ctx.lineWidth=2;
+  for(var L=-0.5;L<=0.5;L+=1){
+    var a=proj(0,L*2,0), b=proj(58,L*2,0);
+    ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+  }
+  // ground stripes for speed
+  ctx.fillStyle='rgba(255,255,255,.05)';
+  for(var z= (s.dist*2)%6; z<60; z+=6){
+    var p1=proj(z,-1.6,0), p2=proj(z,1.6,0), p3=proj(z+2.5,1.6,0), p4=proj(z+2.5,-1.6,0);
+    ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.lineTo(p3.x,p3.y); ctx.lineTo(p4.x,p4.y); ctx.closePath(); ctx.fill();
+  }
+
+  // AI player (far ahead) — position based on gap (clamp to visual range)
+  var pz=Math.min(58, 8 + s.gap*0.55);
+  var pp=proj(pz, 0, 0);
+  drawRunner(pp.x, pp.y, pp.scale, s.pStumble>0);
+
+  // obstacles
+  var sorted=s.obstacles.slice().sort(function(a,b){return b.z-a.z;});
+  for(var i=0;i<sorted.length;i++){ drawObstacle(sorted[i]); }
+
+  // monster (near, fixed-ish bottom)
+  var mp=proj(0, s.x*2, s.y);
+  drawMonster(mp.x, mp.y, mp.scale, s.sliding>0, s.sprint>0);
+
+  // vignette when losing
+  if(s.gap>60){
+    ctx.fillStyle='rgba(120,0,0,'+Math.min(0.4,(s.gap-60)/100)+')'; ctx.fillRect(0,0,W,H);
+  }
+}
+
+function drawObstacle(o){
+  var p=proj(o.z, o.lane===0?-2:o.lane===2?2:0, 0);
+  if(p.scale<=0.02)return;
+  var sc=p.scale;
+  if(o.type==='jump'){ // low barrier -> jump over
+    ctx.fillStyle=o.hit?'#664':'#c0392b';
+    ctx.fillRect(p.x-30*sc, p.y-22*sc, 60*sc, 22*sc);
+    ctx.fillStyle='#8e2820'; ctx.fillRect(p.x-30*sc,p.y-6*sc,60*sc,6*sc);
+  } else { // overhead bar -> slide under
+    ctx.fillStyle=o.hit?'#446':'#2980d9';
+    ctx.fillRect(p.x-34*sc, p.y-70*sc, 68*sc, 12*sc);
+    ctx.fillRect(p.x-30*sc, p.y-70*sc, 6*sc, 70*sc);
+    ctx.fillRect(p.x+24*sc, p.y-70*sc, 6*sc, 70*sc);
+  }
+}
+
+function drawRunner(x,y,sc,stumble){
+  ctx.save(); ctx.translate(x,y);
+  var bob=Math.sin(state.t*16)*3*sc;
+  ctx.translate(0,bob);
+  // shadow
+  ctx.fillStyle='rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(0,4*sc,26*sc,8*sc,0,0,7); ctx.fill();
+  // body (running human, blue)
+  ctx.fillStyle=stumble?'#f1c40f':'#48c0ff';
+  ctx.fillRect(-12*sc,-58*sc,24*sc,34*sc);
+  // head
+  ctx.fillStyle='#ffd9a8'; ctx.beginPath(); ctx.arc(0,-66*sc,11*sc,0,7); ctx.fill();
+  // legs
+  var lp=Math.sin(state.t*16)*10*sc;
+  ctx.fillStyle='#2c3e50';
+  ctx.fillRect(-11*sc,-26*sc,9*sc,(26+lp)*sc);
+  ctx.fillRect(2*sc,-26*sc,9*sc,(26-lp)*sc);
+  if(stumble){ ctx.fillStyle='#fff'; ctx.font=(14*sc|0)+'px sans-serif'; ctx.fillText('!?',-6*sc,-80*sc); }
+  ctx.restore();
+}
+
+function drawMonster(x,y,sc,sliding,sprinting){
+  sc=Math.max(sc,0.9);
+  ctx.save(); ctx.translate(x,y);
+  var bob=Math.sin(state.t*14)*4;
+  ctx.translate(0,bob);
+  if(sprinting){ ctx.shadowColor='#ff8c1a'; ctx.shadowBlur=24; }
+  // shadow
+  ctx.shadowBlur=sprinting?24:0;
+  ctx.fillStyle='rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(0,8,46*sc,12*sc,0,0,7); ctx.fill();
+  var bh=sliding?42:78; // squash when sliding
+  var by=sliding?-42:-86;
+  // body (purple goofy blob)
+  ctx.fillStyle='#9b4dff';
+  roundRect(-40*sc, by*sc, 80*sc, bh*sc, 22*sc); ctx.fill();
+  // belly
+  ctx.fillStyle='#c69bff'; roundRect(-22*sc,(by+bh*0.35)*sc,44*sc,bh*0.5*sc,14*sc); ctx.fill();
+  // legs stomp
+  var lp=Math.sin(state.t*14)*12*sc;
+  ctx.fillStyle='#7a2fd6';
+  if(!sliding){ ctx.fillRect(-26*sc,-14*sc,18*sc,(14+lp)*sc); ctx.fillRect(8*sc,-14*sc,18*sc,(14-lp)*sc); }
+  // eyes (big goofy)
+  var ey=(by+18)*sc;
+  ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(-15*sc,ey,12*sc,0,7); ctx.arc(15*sc,ey,12*sc,0,7); ctx.fill();
+  ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(-13*sc,ey+2*sc,5*sc,0,7); ctx.arc(17*sc,ey+2*sc,5*sc,0,7); ctx.fill();
+  // mouth / teeth
+  ctx.fillStyle='#3a0d2e'; roundRect(-24*sc,(by+38)*sc,48*sc,16*sc,6*sc); ctx.fill();
+  ctx.fillStyle='#fff';
+  for(var k=-2;k<=2;k++){ ctx.beginPath(); ctx.moveTo(k*9*sc,(by+38)*sc); ctx.lineTo((k*9+4)*sc,(by+38)*sc); ctx.lineTo((k*9+2)*sc,(by+46)*sc); ctx.fill(); }
+  // horns
+  ctx.fillStyle='#ffd34d';
+  ctx.beginPath(); ctx.moveTo(-30*sc,by*sc); ctx.lineTo(-22*sc,(by-18)*sc); ctx.lineTo(-14*sc,by*sc); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(14*sc,by*sc); ctx.lineTo(22*sc,(by-18)*sc); ctx.lineTo(30*sc,by*sc); ctx.fill();
+  ctx.restore();
+  // roar effect
+  if(state.roarCd>ROAR_CD-0.4){
+    var r=(ROAR_CD-state.roarCd)*260;
+    ctx.strokeStyle='rgba(255,80,160,'+(1-(ROAR_CD-state.roarCd)/0.4)+')'; ctx.lineWidth=6;
+    ctx.beginPath(); ctx.arc(x,y-50,r,0,7); ctx.stroke();
+  }
+}
+function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+
+// ---- HUD update ----
+var elScore=document.getElementById('score'), elBest=document.getElementById('best'),
+    elMeter=document.getElementById('meterFill'),
+    elRoarCd=document.getElementById('roarCd'), elSprintCd=document.getElementById('sprintCd');
+function updateHud(){
+  var s=state;
+  elScore.textContent='Afstand: '+Math.floor(s.dist)+'m   Vangsten: '+s.catches;
+  elBest.textContent='Beste: '+BEST;
+  // meter: 0 gap=full(caught) ... 85 gap=empty. Show closeness.
+  var pct=Math.max(0,Math.min(100,(1-s.gap/85)*100));
+  elMeter.style.width=pct+'%';
+  elRoarCd.style.transform='scaleY('+Math.max(0,s.roarCd/ROAR_CD)+')';
+  elSprintCd.style.transform='scaleY('+Math.max(0,s.sprintCd/SPRINT_CD)+')';
+}
+
+// ---- loop ----
+function frame(now){
+  if(!running)return;
+  var dt=(now-lastT)/1000; lastT=now;
+  if(dt>0.05)dt=0.05;            // clamp big gaps
+  update(dt);
+  render();
+  updateHud();
+  requestAnimationFrame(frame);
+}
+
+// ---- game flow ----
+var startOv=document.getElementById('startOv'), endOv=document.getElementById('endOv');
+function startGame(){
+  state=newState();
+  spawnObstacle();
+  startOv.classList.add('hidden'); endOv.classList.add('hidden');
+  running=true; lastT=performance.now();
+  requestAnimationFrame(frame);
+}
+function endGame(won){
+  running=false;
+  document.getElementById('endTitle').textContent = won ? 'GEVANGEN! 🍴' : 'Hij ontsnapte...';
+  document.getElementById('endMsg').textContent = won
+    ? 'Je hapte de speler na '+Math.floor(state.dist)+'m! Sneller vangen = meer eer. Op naar de volgende jacht?'
+    : 'De speler rende te ver weg ('+Math.floor(state.dist)+'m gehaald). Volgende keer eerder ROAR-en!';
+  document.getElementById('restartBtn').textContent = won ? 'VOLGENDE JACHT' : 'OPNIEUW';
+  endOv.classList.remove('hidden');
+}
+document.getElementById('startBtn').addEventListener('click',startGame);
+document.getElementById('restartBtn').addEventListener('click',startGame);
+
+// draw idle background once
+ctx.fillStyle='#2a1840'; ctx.fillRect(0,0,W,H);
+})();
+</script>
+</body>
+</html>
