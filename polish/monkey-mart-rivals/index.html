@@ -1,0 +1,2932 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=900, initial-scale=1">
+<title>Monkey Mart Rivals</title>
+<style>
+  html,body{margin:0;padding:0;background:#22262e;font-family:'Segoe UI',Arial,sans-serif;-webkit-user-select:none;user-select:none;}
+  #wrap{position:relative;width:900px;height:640px;margin:0 auto;overflow:hidden;background:#2b3040;}
+  canvas{display:block;width:900px;height:640px;touch-action:manipulation;}
+  /* ---- DOM overlay UI ---- */
+  .overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(20,22,30,0.82);color:#fff;text-align:center;z-index:10;}
+  .overlay.show{display:flex;}
+  .panel{background:#343a4d;border:3px solid #1c1f2a;border-radius:16px;padding:22px 30px;max-width:820px;box-shadow:0 8px 30px rgba(0,0,0,.5);}
+  h1{font-size:40px;margin:0 0 8px;color:#f4a259;text-shadow:2px 2px 0 #1c1f2a;}
+  h2{font-size:25px;margin:0 0 10px;color:#ffd97d;}
+  p{font-size:15px;line-height:1.45;margin:6px 0;}
+  .btn{display:inline-block;margin:8px 6px 0;padding:12px 24px;font-size:17px;font-weight:bold;color:#fff;background:#f4a259;border:3px solid #1c1f2a;border-radius:12px;cursor:pointer;box-shadow:0 4px 0 #b06f33;}
+  .btn:active{transform:translateY(3px);box-shadow:0 1px 0 #b06f33;}
+  .btn.blue{background:#5b8dee;box-shadow:0 4px 0 #3a5fae;}
+  .btn.blue:active{box-shadow:0 1px 0 #3a5fae;}
+  .btn.grey{background:#6b7286;box-shadow:0 4px 0 #474c5c;}
+  .btn.grey:active{box-shadow:0 1px 0 #474c5c;}
+  .btn.red{background:#d6604a;box-shadow:0 4px 0 #9c4233;}
+  .btn.red:active{box-shadow:0 1px 0 #9c4233;}
+  .btn:disabled{opacity:.45;cursor:default;transform:none;}
+  .btn.small{padding:8px 16px;font-size:14px;}
+  /* upgrade + sabotage cards */
+  #cards{display:flex;gap:12px;justify-content:center;margin:12px 0 4px;flex-wrap:wrap;}
+  .card{width:175px;background:#3e4660;border:3px solid #1c1f2a;border-radius:14px;padding:12px 10px;cursor:pointer;transition:transform .1s;}
+  .card:hover{transform:translateY(-4px);border-color:#f4a259;}
+  .card.unaffordable{opacity:.5;cursor:default;}
+  .card.unaffordable:hover{transform:none;border-color:#1c1f2a;}
+  .card .cicon{font-size:32px;}
+  .card .cname{font-size:15px;font-weight:bold;color:#ffd97d;margin:5px 0 4px;}
+  .card .cdesc{font-size:12px;color:#cfd6e8;min-height:46px;}
+  .card .ccost{font-size:15px;font-weight:bold;color:#ffe28a;margin-top:6px;}
+  #handRow{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:8px 0;}
+  .sabcard{width:150px;background:#4a3550;border:3px solid #1c1f2a;border-radius:12px;padding:10px 8px;cursor:pointer;transition:transform .1s;}
+  .sabcard:hover{transform:translateY(-3px);border-color:#d68fff;}
+  .sabcard.unaffordable,.sabcard.used{opacity:.45;cursor:default;}
+  .sabcard.unaffordable:hover,.sabcard.used:hover{transform:none;border-color:#1c1f2a;}
+  .sabcard .sicon{font-size:26px;}
+  .sabcard .sname{font-size:13px;font-weight:bold;color:#e9b6ff;margin:3px 0;}
+  .sabcard .sdesc{font-size:11px;color:#d6c6e0;min-height:42px;}
+  .sabcard .scost{font-size:13px;font-weight:bold;color:#ffe28a;}
+  /* speech bubble */
+  .bubble{position:relative;background:#fff;color:#222;border:3px solid #1c1f2a;border-radius:16px;padding:18px 22px;max-width:560px;font-size:17px;}
+  .bubble:after{content:'';position:absolute;bottom:-16px;left:60px;border:10px solid transparent;border-top-color:#fff;}
+  .rivalface{width:64px;height:64px;border-radius:50%;background:#5b8dee;border:3px solid #1c1f2a;display:inline-flex;align-items:center;justify-content:center;font-size:34px;margin-bottom:8px;}
+  /* report bars */
+  .shareTrack{width:480px;height:30px;background:#5b8dee;border:3px solid #1c1f2a;border-radius:15px;overflow:hidden;margin:12px auto;position:relative;}
+  .shareFill{height:100%;background:#f4a259;width:50%;transition:width 1.2s cubic-bezier(.25,.9,.35,1.1);}
+  .shareLbl{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:15px;color:#fff;text-shadow:1px 1px 0 #1c1f2a;}
+  table.rep{margin:8px auto;border-collapse:collapse;font-size:15px;}
+  table.rep td{padding:4px 14px;}
+  .you{color:#f4a259;font-weight:bold;} .riv{color:#8db4ff;font-weight:bold;}
+  /* loyalty hearts row */
+  #loyRow{display:flex;gap:14px;justify-content:center;margin:8px 0;flex-wrap:wrap;}
+  .loyArch{font-size:13px;color:#cfd6e8;}
+  .loyBarBg{width:90px;height:12px;background:#222a3a;border:2px solid #1c1f2a;border-radius:7px;overflow:hidden;margin-top:2px;position:relative;}
+  .loyBarYou{height:100%;background:#f4a259;}
+  /* season map */
+  #seasonGrid{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:14px 0;}
+  .weekTile{width:120px;background:#3e4660;border:3px solid #1c1f2a;border-radius:12px;padding:10px;cursor:pointer;}
+  .weekTile.locked{opacity:.4;cursor:default;}
+  .weekTile.won{border-color:#7fd18a;}
+  .weekTile:hover:not(.locked){transform:translateY(-3px);border-color:#f4a259;}
+  .weekTile .wkn{font-size:15px;font-weight:bold;color:#ffd97d;}
+  .weekTile .wkr{font-size:12px;color:#cfd6e8;margin:4px 0;}
+  .weekTile .wkc{font-size:20px;min-height:24px;}
+  /* skins screen */
+  #skinGrid{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:12px 0;}
+  .skinTile{width:110px;background:#3e4660;border:3px solid #1c1f2a;border-radius:12px;padding:10px;cursor:pointer;}
+  .skinTile.locked{opacity:.4;cursor:default;}
+  .skinTile.active{border-color:#ffd23f;}
+  .skinSwatch{width:60px;height:36px;border-radius:6px;margin:0 auto 6px;border:2px solid #1c1f2a;}
+  .skinTile .skn{font-size:12px;font-weight:bold;color:#ffd97d;}
+  /* tutorial tooltip */
+  #tip{position:absolute;z-index:12;max-width:260px;background:#fff;color:#222;border:3px solid #f4a259;border-radius:12px;padding:12px 14px;font-size:13.5px;line-height:1.4;display:none;box-shadow:0 6px 18px rgba(0,0,0,.5);}
+  #tip b{color:#b06f33;}
+  #tip .tipbtn{margin-top:8px;padding:5px 14px;font-size:13px;font-weight:bold;background:#f4a259;color:#fff;border:2px solid #1c1f2a;border-radius:8px;cursor:pointer;}
+  /* alliance banner */
+  #debugHud{position:absolute;left:6px;bottom:6px;color:#7CFC9A;font:11px monospace;z-index:9;display:none;white-space:pre;text-align:left;pointer-events:none;}
+  #speedBtn{position:absolute;right:8px;bottom:8px;z-index:9;display:none;padding:6px 12px;font-size:13px;}
+  #pauseHint{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55);color:#fff;font-size:30px;font-weight:bold;z-index:8;}
+  .tag{display:inline-block;background:#5b8dee;color:#fff;font-size:11px;font-weight:bold;padding:2px 8px;border-radius:8px;margin-left:6px;}
+  .warn{color:#ffb3b3;font-weight:bold;}
+  /* ---- Fase 6: title screen polish ---- */
+  #ovTitle .panel{background:linear-gradient(160deg,#3a4258 0%,#343a4d 55%,#2e3446 100%);}
+  .tagline{font-size:16px;color:#ffd97d;font-style:italic;margin:2px 0 10px;letter-spacing:.3px;}
+  .btn.big{padding:15px 34px;font-size:20px;}
+  .btn.big:active{transform:translateY(3px);}
+  #titleBtns{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;align-items:center;margin-top:6px;}
+  .titleFoot{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:6px;}
+  .btn:hover{filter:brightness(1.08);}
+  .btn.locked:hover,.btn:disabled:hover{filter:none;}
+  /* ---- Fase 6: achievements overview ---- */
+  #achGrid{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:12px 0;}
+  .achTile{width:230px;background:#3e4660;border:3px solid #1c1f2a;border-radius:12px;padding:10px 12px;text-align:left;display:flex;gap:10px;align-items:flex-start;opacity:.5;filter:grayscale(1);transition:transform .1s;}
+  .achTile.got{opacity:1;filter:none;border-color:#7ed6a5;}
+  .achTile .aic{font-size:30px;line-height:1;}
+  .achTile .atx{flex:1;}
+  .achTile .an{font-size:14px;font-weight:bold;color:#ffd97d;}
+  .achTile .ad{font-size:11.5px;color:#cfd6e8;margin-top:2px;line-height:1.35;}
+  .achTile .alk{font-size:11px;color:#8a92a8;margin-top:3px;}
+  #achCount{font-size:14px;color:#7ed6a5;font-weight:bold;}
+  /* ---- Fase 6: unlock toast ---- */
+  #achToastWrap{position:absolute;left:0;right:0;top:12px;z-index:15;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none;}
+  .achToast{display:flex;gap:12px;align-items:center;background:#2e3446;border:3px solid #7ed6a5;border-radius:14px;padding:10px 18px;box-shadow:0 8px 26px rgba(0,0,0,.5);color:#fff;min-width:280px;max-width:520px;transform:translateY(-140%);opacity:0;transition:transform .45s cubic-bezier(.2,.9,.3,1.2),opacity .45s;}
+  .achToast.in{transform:translateY(0);opacity:1;}
+  .achToast .tic{font-size:34px;}
+  .achToast .ttl{font-size:12px;font-weight:bold;color:#7ed6a5;letter-spacing:.5px;text-transform:uppercase;}
+  .achToast .tnm{font-size:16px;font-weight:bold;color:#ffd97d;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="cv" width="900" height="640"></canvas>
+  <div id="pauseHint">⏸ Gepauzeerd — klik om verder te gaan</div>
+  <div id="debugHud"></div>
+  <button id="speedBtn" class="btn grey">⏩ ×4</button>
+  <div id="tip"></div>
+  <div id="achToastWrap"></div>
+
+  <div id="ovTitle" class="overlay">
+    <div class="panel">
+      <h1>🐵 Monkey Mart Rivals</h1>
+      <p class="tagline">Eén straat. Twee apen. Één winnaar per week.</p>
+      <p>Jouw winkel links, de rival rechts. Win elke week met <b>≥ 50% marktaandeel</b> op dag 7.
+      Speel slim: kopieer, ontwijk in een niche, saboteer, of sluit een alliantie.</p>
+      <div id="titleBtns"></div>
+      <p style="font-size:12px;color:#8a92a8;margin-top:12px;">Seizoen: 5 weken · 3 rivals · daarna endless · <span style="color:#7ed6a5;">Mebbols.com</span></p>
+    </div>
+  </div>
+
+  <div id="ovAch" class="overlay">
+    <div class="panel" style="max-width:790px;">
+      <h2>🏅 Prestaties <span id="achCount"></span></h2>
+      <p style="font-size:13px;color:#cfd6e8;">Verdien ze door slim te spelen. Ontgrendelingen worden bewaard.</p>
+      <div id="achGrid"></div>
+      <button id="btnAchBack" class="btn grey">◀ Terug</button>
+    </div>
+  </div>
+
+  <div id="ovSeason" class="overlay">
+    <div class="panel" style="max-width:760px;">
+      <h2>🗺️ Seizoenskaart</h2>
+      <p id="seasonSub">Versla alle 5 weken om Straatkoning te worden.</p>
+      <div id="seasonGrid"></div>
+      <div id="seasonBtns"></div>
+    </div>
+  </div>
+
+  <div id="ovSkins" class="overlay">
+    <div class="panel" style="max-width:760px;">
+      <h2>🎨 Skins &amp; Hoedjes</h2>
+      <p>Win weken voor winkel-skins. Verdien kronen (≥65%) voor aap-hoedjes.</p>
+      <div id="skinGrid"></div>
+      <h2 style="font-size:19px;margin-top:10px;">🎩 Hoedjes</h2>
+      <div id="hatGrid"></div>
+      <button id="btnSkinsBack" class="btn grey">◀ Terug</button>
+    </div>
+  </div>
+
+  <div id="ovWeekIntro" class="overlay">
+    <div style="display:flex;flex-direction:column;align-items:center;">
+      <div class="rivalface" id="introFace">🐱</div>
+      <div class="bubble" id="introText"></div>
+      <button id="btnIntroGo" class="btn blue" style="margin-top:24px;">Open de winkel ▶</button>
+    </div>
+  </div>
+
+  <div id="ovEvening" class="overlay">
+    <div class="panel" style="max-width:860px;">
+      <h2 id="eveTitle">🌙 Avond — kies je zet</h2>
+      <p id="eveCoins"></p>
+      <div id="cards"></div>
+      <div id="eveSab" style="margin-top:6px;">
+        <p style="font-size:13px;color:#e9b6ff;margin:8px 0 2px;">🃏 Sabotage-hand (max 1 per avond)</p>
+        <div id="handRow"></div>
+      </div>
+      <div id="eveAlliance" style="margin-top:4px;"></div>
+      <div id="eveWarn" style="margin-top:4px;"></div>
+      <button id="btnSave" class="btn grey">💰 Klaar / Spaar</button>
+    </div>
+  </div>
+
+  <div id="ovRival" class="overlay">
+    <div style="display:flex;flex-direction:column;align-items:center;">
+      <div class="rivalface" id="rivalFace">🐱</div>
+      <div class="bubble" id="rivalText"></div>
+      <button id="btnRivalOk" class="btn blue" style="margin-top:24px;">Verder ▶</button>
+    </div>
+  </div>
+
+  <div id="ovReport" class="overlay">
+    <div class="panel">
+      <h2 id="repTitle">📊 Dagrapport</h2>
+      <table class="rep">
+        <tr><td class="you">Jij</td><td id="repYou">0 🪙</td></tr>
+        <tr><td class="riv" id="repRivName">Rival</td><td id="repRiv">0 🪙</td></tr>
+        <tr><td>Klanten bediend</td><td id="repServed"></td></tr>
+        <tr><td>Boos weggelopen</td><td id="repAngry"></td></tr>
+      </table>
+      <div id="loyRow"></div>
+      <p style="margin-top:6px;">Marktaandeel</p>
+      <div class="shareTrack"><div class="shareFill" id="repShareFill"></div><div class="shareLbl" id="repShareLbl">50%</div></div>
+      <button id="btnReportOk" class="btn">Volgende dag ▶</button>
+    </div>
+  </div>
+
+  <div id="ovWeekEnd" class="overlay">
+    <div class="panel">
+      <h1 id="weTitle">🏆</h1>
+      <p id="weText"></p>
+      <div class="shareTrack"><div class="shareFill" id="weShareFill"></div><div class="shareLbl" id="weShareLbl"></div></div>
+      <div id="weExtra"></div>
+      <div id="weBtns"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+/* =====================================================================
+   FASE 4 — AudioEngine + SFX + Juice Systems
+   Web Audio synth (geen externe audio files). Gameplay/RNG/save NIET
+   aangepast — puur audio & visuele juice toegevoegd.
+   ===================================================================== */
+
+/* ── AudioEngine ────────────────────────────────────────────────────── */
+const AudioEngine = (function(){
+  let _ctx = null;
+  let _master = null;
+  let _musicGain = null;
+  let _muted = false;
+  let _musicScheduler = null;
+  let _musicPhase = 'dag';
+  let _musicBeat = 0;
+  let _musicNext = 0;
+  let _tempoMult = 1.0;
+  let _started = false;
+
+  const BPM_DAG = 95, BPM_AVOND = 47;
+  const PENTA_DAG   = [261.63, 293.66, 329.63, 392.00, 440.00];
+  const PENTA_AVOND = [130.81, 146.83, 164.81, 196.00, 220.00];
+  const PAT_DAG     = [1,0,1,0, 1,1,0,1, 0,1,0,1, 1,0,1,0];
+  const PAT_AVOND   = [1,0,0,1, 0,1,0,0, 1,0,0,1, 0,0,1,0];
+
+  function _ensureCtx(){
+    if (_ctx) return true;
+    try {
+      _ctx = new (window.AudioContext || window.webkitAudioContext)();
+      _master = _ctx.createGain();
+      _master.gain.setValueAtTime(_muted ? 0 : 0.7, _ctx.currentTime);
+      _master.connect(_ctx.destination);
+      _musicGain = _ctx.createGain();
+      _musicGain.gain.setValueAtTime(0.18, _ctx.currentTime);
+      _musicGain.connect(_master);
+      return true;
+    } catch(e){ return false; }
+  }
+
+  function _pluck(freq, when, dur, vol, type){
+    if (!_ctx) return;
+    const o = _ctx.createOscillator(), g = _ctx.createGain();
+    o.type = type || 'triangle';
+    o.frequency.setValueAtTime(freq, when);
+    g.gain.setValueAtTime(0, when);
+    g.gain.linearRampToValueAtTime(vol, when + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, when + dur);
+    o.connect(g); g.connect(_musicGain);
+    o.start(when); o.stop(when + dur + 0.02);
+  }
+
+  function _scheduleBatch(){
+    if (!_ctx || _muted) return;
+    const horizon = 0.20;
+    const bpm = (_musicPhase === 'avond' ? BPM_AVOND : BPM_DAG) * _tempoMult;
+    const step = 60 / bpm / 4;
+    const pat   = _musicPhase === 'avond' ? PAT_AVOND : PAT_DAG;
+    const scale = _musicPhase === 'avond' ? PENTA_AVOND : PENTA_DAG;
+    while (_musicNext < _ctx.currentTime + horizon){
+      const s = _musicBeat % 16;
+      if (pat[s]){
+        const f = scale[_musicBeat % scale.length];
+        if (_musicPhase === 'avond'){
+          _pluck(f, _musicNext, 0.55, 0.22, 'sine');
+          _pluck(f * 1.5, _musicNext, 0.40, 0.09, 'sine');
+        } else {
+          _pluck(f, _musicNext, 0.12, 0.28, 'triangle');
+          if (s % 4 === 0) _pluck(f * 1.25, _musicNext + 0.015, 0.09, 0.12, 'triangle');
+        }
+      }
+      _musicNext += step;
+      _musicBeat++;
+    }
+  }
+
+  if (typeof document !== 'undefined'){
+    document.addEventListener('visibilitychange', ()=>{
+      if (!_ctx) return;
+      if (document.hidden) _ctx.suspend(); else _ctx.resume();
+    });
+  }
+
+  return {
+    get ctx(){ return _ctx; },
+    get muted(){ return _muted; },
+    get started(){ return _started; },
+    getMasterGain(){ return _master; },
+
+    ensureCtx(){ return _ensureCtx(); },
+    resumeCtx(){ if (_ctx && _ctx.state === 'suspended') _ctx.resume(); },
+
+    startMusic(phase){
+      if (!_ensureCtx()) return;
+      this.resumeCtx();
+      if (_musicScheduler) clearInterval(_musicScheduler);
+      _musicPhase = phase || 'dag';
+      _musicBeat = 0;
+      _musicNext = _ctx.currentTime + 0.05;
+      _started = true;
+      _scheduleBatch();
+      _musicScheduler = setInterval(()=>{ if (!_muted) _scheduleBatch(); }, 60);
+    },
+
+    crossfade(phase){
+      if (_musicPhase === phase) return;
+      _musicPhase = phase;
+      _musicBeat = 0;
+      if (_ctx) _musicNext = _ctx.currentTime + 0.05;
+      if (_musicGain && _ctx){
+        _musicGain.gain.cancelScheduledValues(_ctx.currentTime);
+        _musicGain.gain.setValueAtTime(_musicGain.gain.value, _ctx.currentTime);
+        _musicGain.gain.linearRampToValueAtTime(0, _ctx.currentTime + 0.25);
+        _musicGain.gain.linearRampToValueAtTime(0.18, _ctx.currentTime + 0.5);
+      }
+    },
+
+    setDayTempo(day){ _tempoMult = day >= 6 ? 1.10 : 1.0; },
+
+    setMuted(val){
+      _muted = val;
+      if (_master && _ctx){
+        _master.gain.cancelScheduledValues(_ctx.currentTime);
+        _master.gain.setValueAtTime(_muted ? 0 : 0.7, _ctx.currentTime);
+      }
+      if (_muted && _musicScheduler){ clearInterval(_musicScheduler); _musicScheduler = null; }
+    },
+
+    loadMutePref(){
+      try {
+        const d = JSON.parse(localStorage.getItem('mmr.meta.v1'));
+        if (d && d.meta && d.meta.settings) return !!d.meta.settings.muted;
+      } catch(e){}
+      return false;
+    },
+    saveMutePref(val){
+      try {
+        const raw = localStorage.getItem('mmr.meta.v1');
+        const d = raw ? JSON.parse(raw) : { version:1, meta:{} };
+        if (!d.meta) d.meta = {};
+        if (!d.meta.settings) d.meta.settings = {};
+        d.meta.settings.muted = val;
+        localStorage.setItem('mmr.meta.v1', JSON.stringify(d));
+      } catch(e){}
+    },
+  };
+})();
+
+/* ── SFX — 12 gesynthetiseerde geluiden ────────────────────────────── */
+const sfx = {
+  _ok(){ return AudioEngine.ctx && !AudioEngine.muted; },
+  _mg(){ return AudioEngine.getMasterGain(); },
+  _c(){ return AudioEngine.ctx; },
+
+  chaChing(){
+    if (!this._ok()) return;
+    const c = this._c(), g = c.createGain(), o = c.createOscillator();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(880, c.currentTime);
+    o.frequency.exponentialRampToValueAtTime(440, c.currentTime + 0.15);
+    g.gain.setValueAtTime(0.30, c.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.22);
+    o.connect(g); g.connect(this._mg());
+    o.start(); o.stop(c.currentTime + 0.25);
+  },
+
+  coinPlop(n){
+    if (!this._ok()) return;
+    const c = this._c(), g = c.createGain(), o = c.createOscillator();
+    const freq = 300 + (n || 1) * 25;
+    o.type = 'sine';
+    o.frequency.setValueAtTime(freq * 0.8, c.currentTime);
+    o.frequency.linearRampToValueAtTime(freq, c.currentTime + 0.04);
+    o.frequency.exponentialRampToValueAtTime(freq * 0.6, c.currentTime + 0.13);
+    g.gain.setValueAtTime(0.14, c.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.15);
+    o.connect(g); g.connect(this._mg());
+    o.start(); o.stop(c.currentTime + 0.17);
+  },
+
+  schapTik(){
+    if (!this._ok()) return;
+    const c = this._c();
+    const buf = c.createBuffer(1, Math.ceil(c.sampleRate * 0.03), c.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random()*2-1)*(1-i/d.length);
+    const src = c.createBufferSource(); src.buffer = buf;
+    const g = c.createGain(); g.gain.setValueAtTime(0.22, c.currentTime);
+    const f = c.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 2000;
+    src.connect(f); f.connect(g); g.connect(this._mg());
+    src.start(); src.stop(c.currentTime + 0.04);
+  },
+
+  bozePruttel(){
+    if (!this._ok()) return;
+    const c = this._c(), g = c.createGain(), o = c.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(440, c.currentTime);
+    o.frequency.exponentialRampToValueAtTime(220, c.currentTime + 0.30);
+    g.gain.setValueAtTime(0.18, c.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.32);
+    o.connect(g); g.connect(this._mg());
+    o.start(); o.stop(c.currentTime + 0.35);
+  },
+
+  slidewhistle(){
+    if (!this._ok()) return;
+    const c = this._c(), g = c.createGain(), o = c.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(400, c.currentTime);
+    o.frequency.linearRampToValueAtTime(800, c.currentTime + 0.25);
+    o.frequency.linearRampToValueAtTime(300, c.currentTime + 0.60);
+    g.gain.setValueAtTime(0.20, c.currentTime);
+    g.gain.setValueAtTime(0.20, c.currentTime + 0.50);
+    g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.65);
+    o.connect(g); g.connect(this._mg());
+    o.start(); o.stop(c.currentTime + 0.70);
+  },
+
+  sabotageString(){
+    if (!this._ok()) return;
+    const c = this._c();
+    for (const freq of [220, 330, 440]){
+      const g = c.createGain(), o = c.createOscillator();
+      o.type = 'sawtooth'; o.frequency.setValueAtTime(freq, c.currentTime);
+      g.gain.setValueAtTime(0.13, c.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.30);
+      o.connect(g); g.connect(this._mg());
+      o.start(); o.stop(c.currentTime + 0.35);
+    }
+  },
+
+  speechBlip(rivalId){
+    if (!this._ok()) return;
+    const c = this._c(), g = c.createGain(), o = c.createOscillator();
+    const pitches = { kiki:600, bruno:380, bongo:250 };
+    o.type = 'sine'; o.frequency.setValueAtTime(pitches[rivalId] || 440, c.currentTime);
+    g.gain.setValueAtTime(0.07, c.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.05);
+    o.connect(g); g.connect(this._mg());
+    o.start(); o.stop(c.currentTime + 0.06);
+  },
+
+  shareTick(){
+    if (!this._ok()) return;
+    const c = this._c();
+    const buf = c.createBuffer(1, Math.ceil(c.sampleRate * 0.02), c.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random()*2-1)*(1-i/d.length)*0.5;
+    const src = c.createBufferSource(); src.buffer = buf;
+    const g = c.createGain(); g.gain.setValueAtTime(0.15, c.currentTime);
+    src.connect(g); g.connect(this._mg());
+    src.start(); src.stop(c.currentTime + 0.03);
+  },
+
+  winFanfare(){
+    if (!this._ok()) return;
+    const c = this._c();
+    for (const [i, freq] of [[0,261.63],[1,329.63],[2,392.00],[3,523.25]]){
+      const t = c.currentTime + i * 0.12;
+      const g = c.createGain(), o = c.createOscillator();
+      o.type = 'square'; o.frequency.setValueAtTime(freq, t);
+      g.gain.setValueAtTime(0.18, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+      o.connect(g); g.connect(this._mg());
+      o.start(t); o.stop(t + 0.22);
+    }
+  },
+
+  lossTrombone(){
+    if (!this._ok()) return;
+    const c = this._c();
+    for (let i = 0; i < 2; i++){
+      const g = c.createGain(), o = c.createOscillator();
+      o.type = 'sine'; o.detune.value = i * 18;
+      o.frequency.setValueAtTime(330, c.currentTime);
+      o.frequency.exponentialRampToValueAtTime(165, c.currentTime + 0.50);
+      g.gain.setValueAtTime(0.20, c.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.55);
+      o.connect(g); g.connect(this._mg());
+      o.start(); o.stop(c.currentTime + 0.60);
+    }
+  },
+
+  handshake(){
+    if (!this._ok()) return;
+    const c = this._c();
+    for (const [i, freq] of [[0,329.63],[1,440.00]]){
+      const t = c.currentTime + i * 0.18;
+      const g = c.createGain(), o = c.createOscillator();
+      o.type = 'triangle'; o.frequency.setValueAtTime(freq, t);
+      g.gain.setValueAtTime(0.22, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+      o.connect(g); g.connect(this._mg());
+      o.start(t); o.stop(t + 0.25);
+    }
+  },
+
+  klik(){
+    if (!this._ok()) return;
+    const c = this._c();
+    const buf = c.createBuffer(1, Math.ceil(c.sampleRate * 0.02), c.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random()*2-1)*(1-i/d.length);
+    const src = c.createBufferSource(); src.buffer = buf;
+    const g = c.createGain(); g.gain.setValueAtTime(0.12, c.currentTime);
+    const filt = c.createBiquadFilter(); filt.type = 'bandpass'; filt.frequency.value = 1200;
+    src.connect(filt); filt.connect(g); g.connect(this._mg());
+    src.start(); src.stop(c.currentTime + 0.03);
+  },
+};
+
+/* ── Screen shake ───────────────────────────────────────────────────── */
+const Shake = {
+  intensity:0, frames:0, dx:0, dy:0,
+  add(intensity, frames){ this.intensity = Math.max(this.intensity, intensity); this.frames = Math.max(this.frames, frames); },
+  tick(){
+    if (this.frames > 0){
+      this.dx = (Math.random()*2-1)*this.intensity;
+      this.dy = (Math.random()*2-1)*this.intensity;
+      this.intensity *= 0.75; this.frames--;
+    } else { this.dx=0; this.dy=0; this.intensity=0; }
+  },
+};
+
+/* ── Confetti pool ─────────────────────────────────────────────────── */
+const _confettiColors = ['#FFD23F','#F4A259','#7ED6A5','#5B8DEE','#D68FFF','#FF6B6B','#FFFFFF'];
+const confettiPool = [];
+for (let _i=0;_i<48;_i++) confettiPool.push({active:false,x:0,y:0,vx:0,vy:0,size:6,color:'#fff',rot:0,rotSpd:0,life:0,maxLife:1.5,alpha:1});
+function spawnConfetti(){
+  let n=0;
+  for (const p of confettiPool){
+    if (!p.active && n<40){
+      p.active=true; p.x=450+(Math.random()-0.5)*300; p.y=200+Math.random()*100;
+      p.vx=(Math.random()-0.5)*140; p.vy=-180-Math.random()*120;
+      p.size=5+Math.random()*5; p.color=_confettiColors[Math.floor(Math.random()*_confettiColors.length)];
+      p.rot=Math.random()*6.28; p.rotSpd=(Math.random()-0.5)*8;
+      p.life=0; p.maxLife=1.2+Math.random()*0.6; p.alpha=1; n++;
+    }
+  }
+}
+function updateConfetti(dt){
+  for (const p of confettiPool){
+    if (!p.active) continue;
+    p.life+=dt; const t=p.life/p.maxLife;
+    p.vy+=220*dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.rot+=p.rotSpd*dt;
+    p.alpha=t<0.7?1:1-(t-0.7)/0.3;
+    if (p.life>=p.maxLife) p.active=false;
+  }
+}
+function drawConfetti(ctx2){
+  for (const p of confettiPool){
+    if (!p.active) continue;
+    ctx2.save(); ctx2.globalAlpha=Math.max(0,p.alpha);
+    ctx2.translate(p.x,p.y); ctx2.rotate(p.rot);
+    ctx2.fillStyle=p.color; ctx2.fillRect(-p.size/2,-p.size/2*0.6,p.size,p.size*0.6);
+    ctx2.restore();
+  }
+  ctx2.globalAlpha=1;
+}
+
+/* ── Coin arc pool (VFX) ───────────────────────────────────────────── */
+const COIN_TARGET = { x:26, y:46 };
+const coinPool = [];
+for (let _i=0;_i<24;_i++) coinPool.push({active:false,x:0,y:0,sx:0,sy:0,t:0,dur:0,scale:1,idx:0});
+let coinTellerPop=0;
+let _coinIdx=0;
+function spawnCoinArc(x,y){
+  const c=coinPool.find(c=>!c.active); if (!c) return;
+  _coinIdx=(_coinIdx+1)%12;
+  c.active=true; c.t=0; c.dur=0.45+Math.random()*0.12;
+  c.sx=x; c.sy=y; c.scale=0.4; c.idx=_coinIdx;
+}
+function updateCoinArcs(dtMs){
+  const dt=dtMs/1000;
+  for (const c of coinPool){
+    if (!c.active) continue;
+    c.t+=dt;
+    const p=Math.min(1,c.t/c.dur);
+    const ease=1-(1-p)*(1-p);
+    c.x=c.sx+(COIN_TARGET.x-c.sx)*ease;
+    const arc=-70*Math.sin(p*Math.PI);
+    c.y=c.sy+(COIN_TARGET.y-c.sy)*ease+arc;
+    c.scale=p<0.18?0.4+(p/0.18)*0.75:(p<0.30?1.15-((p-0.18)/0.12)*0.15:1.0);
+    if (p>=1){ c.active=false; coinTellerPop=0.15; sfx.coinPlop(c.idx); }
+  }
+  if (coinTellerPop>0) coinTellerPop=Math.max(0,coinTellerPop-dt);
+}
+function drawCoinArc(ctx2,x,y,r){
+  ctx2.fillStyle='#FFD23F'; ctx2.beginPath(); ctx2.arc(x,y,r,0,7); ctx2.fill();
+  ctx2.lineWidth=2; ctx2.strokeStyle='#C9931A'; ctx2.stroke();
+}
+function drawCoinArcs(ctx2){
+  for (const c of coinPool){
+    if (!c.active) continue;
+    drawCoinArc(ctx2, c.x, c.y, 7*c.scale);
+  }
+}
+
+/* ── Marktaandeel easing ────────────────────────────────────────────── */
+const ShareAnim = {
+  current:0.5, target:0.5, lastPct:50, pulse:0,
+  update(dt){
+    const prev=this.current;
+    this.current+=( this.target-this.current)*Math.min(1,0.08*60*dt);
+    const prevPct=Math.floor(prev*100), curPct=Math.floor(this.current*100);
+    if (curPct!==prevPct && curPct!==this.lastPct){ this.lastPct=curPct; this.pulse=0.18; sfx.shareTick(); }
+    if (this.pulse>0) this.pulse=Math.max(0,this.pulse-dt);
+  },
+};
+
+/* ── Typewriter voor speech bubbles ────────────────────────────────── */
+const TypeWriter = {
+  full:'', charIdx:0, timer:0, charDelay:0.04,
+  rivalId:'kiki', blipN:0, active:false, el:null,
+  start(text, rivalId, el){
+    this.full=text; this.charIdx=0; this.timer=0; this.rivalId=rivalId||'kiki';
+    this.active=true; this.el=el; this.blipN=0;
+    if (el) el.textContent='';
+  },
+  update(dt){
+    if (!this.active) return;
+    this.timer+=dt;
+    while (this.timer>=this.charDelay && this.charIdx<this.full.length){
+      this.timer-=this.charDelay; this.charIdx++; this.blipN++;
+      if (this.blipN%3===0) sfx.speechBlip(this.rivalId);
+      if (this.el) this.el.textContent=this.full.slice(0,this.charIdx);
+    }
+    if (this.charIdx>=this.full.length){
+      this.active=false;
+      if (this.el) this.el.textContent=this.full;
+    }
+  },
+  skip(){ if (!this.active) return; this.active=false; if (this.el) this.el.textContent=this.full; },
+};
+
+/* ── Dag/nacht-transitie overlay ────────────────────────────────────── */
+const DayNightAnim = {
+  alpha:0, phase:'none', awningT:1,
+  start(phase){
+    this.phase=phase;
+    if (phase==='open'){ this.awningT=0; this.alpha=0.3; }
+    else { this.awningT=1; this.alpha=0; }
+  },
+  update(dt){
+    const spd=dt/0.5;
+    if (this.phase==='open'){
+      this.awningT=Math.min(1,this.awningT+spd);
+      this.alpha=Math.max(0,this.alpha-spd*0.3);
+    } else if (this.phase==='close'){
+      this.awningT=Math.max(0,this.awningT-spd);
+      this.alpha=Math.min(0.3,this.alpha+spd*0.3);
+    }
+  },
+  drawOverlay(ctx2){
+    if (this.alpha<=0.002) return;
+    ctx2.fillStyle='rgba(10,15,30,'+this.alpha.toFixed(3)+')';
+    ctx2.fillRect(0,0,900,640);
+  },
+};
+
+/* ── Mute-knop setup ────────────────────────────────────────────────── */
+function setupMuteBtn(){
+  let btn = document.getElementById('muteBtn');
+  if (!btn){
+    btn = document.createElement('button');
+    btn.id = 'muteBtn';
+    btn.style.cssText = 'position:absolute;right:8px;top:60px;z-index:11;padding:4px 11px;font-size:13px;font-weight:700;background:#343a4d;color:#cfd6e8;border:2px solid #5a6278;border-radius:8px;cursor:pointer;';
+    document.getElementById('wrap').appendChild(btn);
+  }
+  function upd(){ btn.textContent = AudioEngine.muted ? '🔇' : '🔊'; }
+  const initMuted = AudioEngine.loadMutePref();
+  AudioEngine.setMuted(initMuted);
+  upd();
+  btn.addEventListener('click', ()=>{
+    AudioEngine.ensureCtx(); AudioEngine.resumeCtx();
+    const v = !AudioEngine.muted;
+    AudioEngine.setMuted(v); AudioEngine.saveMutePref(v); upd();
+    if (!v){ AudioEngine.startMusic('dag'); }
+    // (klik-SFX komt van de gedelegeerde pointerdown-listener)
+  });
+}
+function _audioGesture(){
+  if (!AudioEngine.ctx){ AudioEngine.ensureCtx(); AudioEngine.resumeCtx(); }
+  else AudioEngine.resumeCtx();
+}
+/* =====================================================================
+   Monkey Mart Rivals — Fase 2 (Content: 5 weken, 3 rivals, sabotage,
+   allianties, archetype-loyalty, endless, cosmetics, tutorial)
+   Single-file, vanilla Canvas + DOM-overlay. Geen externe libs.
+   ===================================================================== */
+
+/* ----------------------------- CONFIG --------------------------------
+   ALLE tunables uit GDD §6. Fase-2-keys nu in gebruik. Fase 5 tunet
+   uitsluitend hier. */
+const CONFIG = {
+  dayLengthSec: 90,
+  maxCustomers: 12,
+  customerSpawnBase: 4.5,
+  customerSpawnDayCurve: [1.0, 1.0, 0.85, 0.75, 0.7, 0.6, 0.55],
+  customerPatienceSec: 8,
+  customerWalkSpeed: 60,
+  apeWalkSpeed: 90,
+  apeSpeedUpgradeBonus: 15,
+  apeStockPerTrip: 4,
+  shelfCapacity: [6, 10, 16],
+  warehouseRefillSec: 6,
+  warehouseCap: 12,
+  itemPriceBase: 12,               // bewust opgehoogd t.o.v. GDD-tabel (5); 12 is de
+                                   // gekalibreerde speler-revenue-basis sinds fase 2 (GDD §6 is hierop bijgewerkt).
+  deptPriceFactor: { fruit:1.0, bakkerij:1.4, zuivel:1.3, snacks:1.2, koffie:1.6, speelgoed:2.0 },
+  loyaltyStart: 50,
+  loyaltyBuy: 2,
+  loyaltyEmpty: -15,
+  loyaltyFloor: 15,
+  loyaltyQueue: -5,
+  loyaltyQueueThreshold: 3,        // fase5: bij >= dit aantal klanten in de kassarij daalt loyalty (GDD §4.3 "lange wachtrij −5")
+  loyaltyRescueBonus: 8,           // klantenkaping (GDD §4.3)
+  loyaltyPriceRumor: -10,          // prijsverhoging-gerucht
+  loyaltyMonsters: 10,             // gratis monsters (sabotage 7)
+  deptCostBase: 170,               // fase5: 250→170 — geeft de speler midgame-breedte (2e/3e afdeling op dag 2-3 haalbaar)
+  deptCostGrowth: 1.4,             // fase5: 1.6→1.4 — vlakkere kostencurve zodat breedte de rival kan bijbenen
+  hireCost: [300, 700, 1400],
+  automationCost: 500,
+  autoKassaCost: 600,              // auto-kassa (volledig automatisch afrekenen)
+  checkoutTimeSec: 1.6,
+  cashierApeCheckoutMult: 0.5,
+  autoKassaCheckoutMult: 0.35,
+  marketingFlyerCost: 150,
+  marketingFlyerSpawnMult: 0.7,
+  marketingLoyaltyCardCost: 220,
+  marketingLoyaltyCardBonus: 5,
+  marketingSaleCost: 130,
+  marketingSalePriceMult: 0.8,
+  marketingSaleCustomerMult: 1.4,
+  shelfLevelCost: [180, 420],
+  apeSpeedCost: 200,
+  sabotageCosts: [55, 90, 110, 75, 150, 65, 80, 130],      // fase5: ~30% goedkoper zodat een kaart netto-positief rendeert (§4.4, 8 kaarten)
+  allianceRevenueSplit: 0.10,
+  allianceBreakPenalty: 20,
+  allianceMinShare: 0.40, allianceMaxShare: 0.60, allianceStaleDays: 3,
+  allianceDays: 3,
+  allianceRefillMult: 1.4,         // gedeelde levering: magazijn sneller
+  allianceClaimBias: 1.30,         // marktverdeling: +30% bias claim-archetypes
+  shareSmoothing: 0.6,
+  rivalEfficiency: [0.70, 0.76, 0.82, 0.87, 0.95],   // fase5: wk5 0.92→0.95 (finale verzwaard)
+  rivalIncomeMult: [0.90, 0.95, 1.00, 1.08, 1.35],   // fase5: wk5 1.15→1.35 (Bongo's coins → echte marktdruk)
+  rivalSabotageChance: { kiki:0.10, bruno:0.20, bongo:0.35 },
+  rivalCopyChance: 0.70,
+  rivalBaseRevPerCustomer: 18,
+  rivalUpgradeEffBonus: 0.015,
+  rivalUpgradeRevBonus: 3.2,
+  rivalUpgradeCost: 90,
+  rivalBluffChance: 0.5,           // fase5: nu echt aangesloten op rivalMove() (kans op de 1x-per-week bluf-zet i.p.v. opbouw)
+  // fase5 — rivale dépt-uitbreiding begrensd (de #1 hefboom tegen de geïnverteerde wk3/4-curve):
+  rivalDeptCost: 110,              // nieuwe rival-afdeling kost coins (was gratis) → breedte kost economie
+  rivalDeptCooldownDays: 2,        // min. dagen tussen twee rival-afdelingen
+  rivalMaxDeptOverPlayer: 1,       // rival mag hooguit (speler-depts + dit) afdelingen hebben
+  rivalDeptHardCap: 4,             // absoluut plafond op rival-afdelingen per week
+  bongoStartCoins: 220,            // fase5: Bongo (finale) krijgt een coin-voorsprong → kan vroeg uitbreiden/investeren (week 5 was te makkelijk)
+  bongoMaxDeptOverPlayer: 2,       // fase5: Bongo mag iets breder dan de speler (finale moet bijten)
+  loyaltyPullExponent: 0.5,
+  rubberBandRivalDays: 3,          // fase5: aangesloten op rubberBandRival() — # recente dagen waarover de gem. achterstand telt
+  rubberBandRivalShareLead: 0.62,  // fase5: speler-share-drempel (was hardcoded 0.5+0.12) waarboven rival "investeerder-oom"-steun krijgt
+  rubberBandPlayerPct: 15,
+  rubberBandRivalEffBonus: 0.02,   // gratis-upgrade-equivalent voor rival bij achterstand
+  rubberBandCapEff: 0.95,
+  nicheAttraction: 1.7,            // fase5: 1.25→1.7 — unieke afdeling levert nu meetbaar voordeel (niche-strategie weer levend)
+  retryBonusPct: 0.25,
+  startCoins: 120,
+  customerWishMax: 3,
+  queueFactorPerWaiting: 0.07,
+  endlessDiffStep: 0.05,           // +5% moeilijkheid per endless-week
+  // sabotage-effect tunables
+  sabBananaPull: 0.45,             // fase5: 0.30→0.45 — sabotage netto-positief maken (meer klant-shift)
+  sabBananaSweepChance: 0.50,      // pers.3 veegt (50%)
+  sabPriceRumorPriceMult: 0.75,    // rival prijsFactor -25%
+  sabSupplyBriberyMult: 0.5,       // rival-magazijn 50% trager
+  sabFakeReviewMult: 0.6,          // -40% aantrekkingskracht 1 afdeling
+  sabHeadhuntRivalEff: 0.7,        // rival-eff x0.7 (-30%)
+  sabHeadhuntApeSpeed: 1.10,       // jouw apen +10%
+  sabStreetArtistBias: 1.20,       // +20% kans jouw kant
+  sabPowerOutage: true,            // rival-automation uit (vlag)
+};
+/* ------------------------------ DATA -------------------------------- */
+const DATA = {
+  departments: [
+    { id:'fruit',     name:'Fruit',     icon:'🍌', color:'#ffd23f', popularity:1.00 },
+    { id:'bakkerij',  name:'Bakkerij',  icon:'🥐', color:'#e0a96d', popularity:0.85 },
+    { id:'zuivel',    name:'Zuivel',    icon:'🥛', color:'#cfe8ef', popularity:0.80 },
+    { id:'snacks',    name:'Snacks',    icon:'🍿', color:'#ff8c69', popularity:0.90 },
+    { id:'koffie',    name:'Koffie',    icon:'☕', color:'#9c6b4f', popularity:0.70 },
+    { id:'speelgoed', name:'Speelgoed', icon:'🧸', color:'#c39bd3', popularity:0.55 },
+  ],
+  // 4 archetypes met afdelings-voorkeuren (gewicht per dept) + herken-prop
+  archetypes: [
+    { id:'gezin',   name:'Gezin',   icon:'👪', color:'#7ec8a0',
+      prefs:{ fruit:1.3, bakkerij:1.2, zuivel:1.3, snacks:1.1, koffie:0.6, speelgoed:1.6 } },
+    { id:'student', name:'Student', icon:'🎧', color:'#9aa9ff',
+      prefs:{ fruit:0.7, bakkerij:0.9, zuivel:0.8, snacks:1.6, koffie:1.5, speelgoed:0.6 } },
+    { id:'senior',  name:'Senior',  icon:'🦯', color:'#d6b86a',
+      prefs:{ fruit:1.4, bakkerij:1.3, zuivel:1.2, snacks:0.6, koffie:1.1, speelgoed:0.5 } },
+    { id:'hipster', name:'Hipster', icon:'🧢', color:'#e08fb5',
+      prefs:{ fruit:0.9, bakkerij:1.1, zuivel:0.7, snacks:1.0, koffie:1.7, speelgoed:0.9 } },
+  ],
+  rivals: {
+    kiki: { id:'kiki', name:'Kiki', personality:'kopieerkat', face:'🐱', barColor:'#5b8dee', blip:'hoog',
+      introLine:'Hoi buurman! Ik ben Kiki. Alles wat jij doet, kan ik beter. Of nou ja... net zo goed, één dag later. 😸' },
+    bruno: { id:'bruno', name:'Bruno', personality:'nichejager', face:'🦝', barColor:'#6dd1c8', blip:'midden',
+      introLine:'Bruno. Ik kijk naar wat jij NIET hebt — en dáár ga ik staan. Lekker rustig in mijn eigen hoekje. Zakelijk gezien is dat slim.' },
+    bongo: { id:'bongo', name:'Don Bongo', personality:'saboteur', face:'🦍', barColor:'#c77dff',
+      blip:'laag',
+      introLine:'Aaah, een nieuwe uitdager voor Don Bongo! Geniet van je stoep, vriend. Morgen ligt er... iets. 🍌😈' },
+  },
+  dialog: {
+    kiki: {
+      copy: [
+        'Lekker bezig met die {x}! Weet je wat... ik ook. 😸',
+        'Oooh {x}, goed idee! Dat doe ík morgen óók!',
+        '{x}? Briljant! Ik kopieer het meteen, hihi.',
+        'Wat jij kan, kan ik na — kijk, {x}!',
+      ],
+      own: [
+        'Ik investeer in mijn winkel. Sneller, beter, Kiki-er!',
+        'Vandaag maak ik mijn schappen extra vol. Kijk maar!',
+        'Mijn winkel wordt steeds beter. Voel je de druk al? 😸',
+      ],
+      save: [ 'Ik spaar vandaag even. Mijn spaarpot moet ook eten.',
+              'Geen zet vandaag... of toch? Nee. Sparen!' ],
+      sab:  [ 'Eh... ik probeer iets stiekems. Sorry alvast! 😼',
+              'Kiki doet ook een keer ondeugend, hoor!' ],
+    },
+    bruno: {
+      niche:[ 'Jij hebt geen {x}? Perfect. Dat is nu van mij.',
+              'Een gat in de markt: {x}. Bruno vult gaten. 🦝',
+              'Ik ga voor {x}. Strategisch. Geen drama, gewoon cijfers.',
+              'De {x}-klant wordt verwaarloosd. Niet meer.' ],
+      own:  [ 'Ik optimaliseer. Marges, geen kunstjes.',
+              'Efficiëntie omhoog. Zo win je een straat.',
+              'Stille groei. Jij merkt het pas als het te laat is.' ],
+      bluff:[ 'Ik denk aan een {x}-afdeling… of misschien toch niet.',
+              'Misschien doe ik morgen iets met {x}. Misschien ook niet. 🦝' ],
+      sab:  [ 'Een kleine verstoring in jouw toevoer. Puur zakelijk.',
+              'Niets persoonlijks. Wel effectief.' ],
+      save: [ 'Ik wacht. Geduld is een marge.' ],
+    },
+    bongo: {
+      sab:  [ 'BWAHAHA! Een cadeautje op je stoep, buurman! 🍌',
+              'Don Bongo slaat toe! Veeg dat maar weg... als je kan. 😈',
+              'Vandaag wordt het glad in jouw winkel. Jammer dan!',
+              'Sabotage is een kunstvorm. En ik ben een MEESTER.' ],
+      counter:[ 'Jij saboteert MIJ? Onaanvaardbaar. Terug-sla! 🦍',
+              'Een tand om een tand, vriend. Don Bongo vergeet niets.' ],
+      own:  [ 'Ik bouw mijn imperium. Steen voor steen. Banaan voor banaan.',
+              'Mijn winkel groeit. Jouw angst ook, hoop ik. 😈' ],
+      bluff:[ 'Ik denk aan een speelgoedafdeling… of aan jouw ondergang.',
+              'Misschien bouw ik {x}. Misschien iets veel ergers. 😈' ],
+      save: [ 'Ik spaar mijn krachten. Voor iets... groots.' ],
+      revenge:[ 'Je verbrak ons pact?! Don Bongo VERGEEFT NIET. 🍌🔥',
+              'Verrader! Voel mijn wraak, twee avonden lang!' ],
+    },
+  },
+  // Upgrade-pool: volledige set (afdeling, hire, automation, marketing, upgrade)
+  upgradePool: [
+    { id:'dept',       cat:'afdeling',   icon:'🏪', name:'Nieuwe afdeling',
+      desc:'Opent een nieuwe afdeling (schap + klantwensen). Uniek = niche-bonus.' },
+    { id:'hire',       cat:'hire',       icon:'🐵', name:'Extra aap',
+      desc:'Een extra werker-aap die schappen vult (max 3).' },
+    { id:'cashier',    cat:'hire',       icon:'🧾', name:'Kassa-aap',
+      desc:'Halveert de checkout-tijd aan jouw kassa.' },
+    { id:'automation', cat:'automation', icon:'⚙️', name:'Lopende band',
+      desc:'Eén afdeling vult zichzelf — geen aap nodig.' },
+    { id:'autokassa',  cat:'automation', icon:'🤖', name:'Auto-kassa',
+      desc:'Volautomatische kassa: zeer snelle checkout, geen aap nodig.' },
+    { id:'shelfLvl',   cat:'upgrade',    icon:'📦', name:'Schap-niveau',
+      desc:'Alle schappen krijgen meer capaciteit (niveau 2/3).' },
+    { id:'apeSpeed',   cat:'upgrade',    icon:'💨', name:'Snellere aap',
+      desc:'Al je apen lopen +15 px/s sneller.' },
+    { id:'flyer',      cat:'marketing',  icon:'📣', name:'Flyeractie',
+      desc:'Morgen komen klanten sneller de straat op (1 dag).' },
+    { id:'loyalty',    cat:'marketing',  icon:'💛', name:'Loyaltykaart',
+      desc:'+5 loyalty bij elke aankoop, permanent (alle archetypes).' },
+    { id:'sale',       cat:'marketing',  icon:'🏷️', name:'Sale!',
+      desc:'Morgen: −20% prijs maar +40% klanten en extra loyalty (1 dag).' },
+  ],
+  // Sabotage-deck: 8 kaarten (GDD §4.4). idx koppelt aan CONFIG.sabotageCosts.
+  sabotage: [
+    { id:'banana',     idx:0, icon:'🍌', name:'Bananenschil',
+      desc:'30% van rival-klanten glijdt uit en loopt naar jou.', announce:'Morgen ligt er een bananenschil op de stoep…' },
+    { id:'priceRumor', idx:1, icon:'📉', name:'Prijsgerucht',
+      desc:'Rival lijkt duurder: −25% prijsfactor, −10 loyalty.', announce:'Er gaat een gerucht dat de prijzen omhoog gaan…' },
+    { id:'bribery',    idx:2, icon:'💰', name:'Leveranciers-omkoop',
+      desc:'Rival-magazijn vult 50% trager.', announce:'De leverancier komt morgen erg laat aan…' },
+    { id:'fakeReview', idx:3, icon:'⭐', name:'Nep-recensie',
+      desc:'Rivals populairste afdeling −40% aantrekkingskracht.', announce:'Een vernietigende recensie verschijnt morgen…' },
+    { id:'headhunt',   idx:4, icon:'🎯', name:'Aap-headhunt',
+      desc:'Rival-efficiency −30%, jouw apen +10% snelheid.', announce:'Een van de rival-apen wordt morgen weggekaapt…' },
+    { id:'artist',     idx:5, icon:'🎺', name:'Straatartiest',
+      desc:'Klanten blijven hangen vóór jouw deur: +20% jouw kant.', announce:'Een straatartiest trekt morgen publiek…' },
+    { id:'monsters',   idx:6, icon:'🧀', name:'Gratis monsters',
+      desc:'+10 loyalty bij 2 random archetypes voor jou.', announce:'Gratis proefmonsters lokken morgen klanten…' },
+    { id:'outage',     idx:7, icon:'🔌', name:'Stroomstoring',
+      desc:'Rival-automation 1 dag uit.', announce:'Een stroomstoring legt morgen de rival lam…' },
+  ],
+  // Seizoen: 5 weken (GDD §5)
+  weeks: [
+    { wk:1, rival:'kiki',  rivalSpeedMult:1.00, intro:'kiki',
+      pool:['fruit','bakkerij'], note:'Opening — Kiki is traag.' },
+    { wk:2, rival:'kiki',  rivalSpeedMult:1.15, intro:'kiki',
+      pool:['fruit','bakkerij','zuivel'], note:'Concurrentie — Kiki kopieert alles.' },
+    { wk:3, rival:'bruno', rivalSpeedMult:1.00, intro:'bruno',
+      pool:['fruit','bakkerij','zuivel','snacks','koffie'], note:'De Nichejager — allianties unlocked.' },
+    { wk:4, rival:'bruno', rivalSpeedMult:1.15, intro:'bruno',
+      pool:['fruit','bakkerij','zuivel','snacks','koffie','speelgoed'], note:'Schaalvergroting — alle 6 afdelingen.' },
+    { wk:5, rival:'bongo', rivalSpeedMult:1.00, intro:'bongo',
+      pool:['fruit','bakkerij','zuivel','snacks','koffie','speelgoed'], note:'Don Bongo — de saboteur.' },
+  ],
+  skins: [
+    { id:'rood',   name:'Start-rood', awning:'#f4a259', floor:'#5a4632', req:null },
+    { id:'mint',   name:'Mint',       awning:'#7ed6a5', floor:'#3e6b52', req:{ week:1 } },
+    { id:'paars',  name:'Nacht-paars',awning:'#9b6dd6', floor:'#3b2f52', req:{ week:2 } },
+    { id:'geel',   name:'Banaan-geel',awning:'#ffd23f', floor:'#6b5a2f', req:{ week:3 } },
+    { id:'diner',  name:'Retro-diner',awning:'#e85d75', floor:'#52323b', req:{ week:4 } },
+    { id:'goud',   name:'Goud',       awning:'#ffcf45', floor:'#6b5320', req:{ season:true } },
+  ],
+  hats: [
+    { id:'geen', name:'Geen', icon:'',  req:null },
+    { id:'pet',  name:'Petje',icon:'🧢', req:{ crowns:1 } },
+    { id:'hoed', name:'Hoed', icon:'🎩', req:{ crowns:3 } },
+    { id:'kroon',name:'Kroontje',icon:'👑',req:{ crowns:5 } },
+  ],
+  // Tutorial-tooltips week 1 (GDD §9, 5 contextueel)
+  tips: {
+    firstCustomer: { txt:'Hier komt je <b>eerste klant</b>! Hij loopt naar een schap en pakt wat hij wil.' },
+    emptyShelf:    { txt:'Een <b>leeg schap</b>! Tik erop om je aap een <b>prioriteit</b> te geven, anders loopt de klant boos naar de overkant.' },
+    firstUpgrade:  { txt:'Het is avond: kies <b>1 upgrade</b> of spaar. Tip: een afdeling die de rival NIET heeft trekt extra klanten.' },
+    firstRival:    { txt:'De rival kondigt zijn zet aan. Lees hem: weet je wat hij doet, dan kun je hem aftroeven.' },
+    firstSabotage: { txt:'Je kreeg een gratis <b>Bananenschil</b>! Speel hem in de avond om rival-klanten naar jou te laten glijden. 🍌' },
+  },
+};
+/* --------------------------- RNG (mulberry32) ------------------------ */
+function mulberry32(seed){
+  let a = seed >>> 0;
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const URLP = (typeof location !== 'undefined' && location.search)
+  ? new URLSearchParams(location.search) : new Map();
+const getParam = (k) => URLP.get(k);
+const SEED  = (() => { const s = getParam('seed'); const n = s == null ? NaN : parseInt(s, 10);
+  return Number.isFinite(n) ? n : ((Date.now() & 0xffffff) ^ 0x9e3779b9); })();
+const DEBUG = getParam('debug') === '1';
+let rng = mulberry32(SEED);
+const rand    = () => rng();
+const randInt = (a, b) => a + Math.floor(rng() * (b - a + 1));
+const pick    = (arr) => arr[Math.floor(rng() * arr.length)];
+const ARCH_IDS = ['gezin','student','senior','hipster'];
+
+/* ------------------------- Layout (GDD §7, definitief) --------------- */
+const L = {
+  W:900, H:640,
+  topBarH:56,
+  shopL:    { x:0,   w:380 },
+  street:   { x:380, w:140 },
+  shopR:    { x:520, w:380 },
+  floorY:   560,
+  shelfSlots: [
+    { x: 30,  y: 200 }, { x: 140, y: 200 }, { x: 250, y: 200 },
+    { x: 30,  y: 360 }, { x: 140, y: 360 }, { x: 250, y: 360 },
+  ],
+  shelfW: 92, shelfH: 70,
+  crate:    { x: 18,  y: 488, w: 70, h: 52 },
+  register: { x: 285, y: 488, w: 80, h: 52 },
+  doorL:    { x: 372 },
+  doorR:    { x: 528 },
+  spawnL:   -30, spawnR: 930,
+  rivalShelves: [
+    { x: 560, y: 220 }, { x: 670, y: 220 }, { x: 780, y: 220 },
+    { x: 560, y: 380 }, { x: 670, y: 380 }, { x: 780, y: 380 },
+  ],
+  bananaY: 540,                 // schil ligt op de stoep voor rival-deur
+};
+
+/* ----- loyalty helpers (per archetype, 0..100) ----- */
+function freshLoyalty(){ const o={}; for (const a of ARCH_IDS) o[a]=CONFIG.loyaltyStart; return o; }
+function loyAdd(loy, arch, d){ loy[arch] = Math.max(CONFIG.loyaltyFloor, Math.min(100, loy[arch] + d)); }
+function loyAddAll(loy, d){ for (const a of ARCH_IDS) loyAdd(loy, a, d); }
+function loyAvg(loy){ let s=0; for (const a of ARCH_IDS) s+=loy[a]; return s/ARCH_IDS.length; }
+
+/* ------------------------------ STATE -------------------------------- */
+function freshPlayer(){
+  return {
+    departments: ['fruit'],
+    apes: [], apeCount: 1,
+    shelves: {}, shelfLevel: 1,
+    automations: [], hasCashierApe: false, hasAutoKassa: false,
+    apeSpeedUps: 0, hasLoyaltyCard: false,
+    loyalty: freshLoyalty(),
+    upgrades: [],
+    todayFlyer: false, todaySale: false,
+  };
+}
+function freshRival(week){
+  const wd = DATA.weeks[Math.min(week-1,4)];
+  const id = wd ? wd.rival : 'kiki';
+  return {
+    id,
+    departments: ['fruit'],
+    efficiency: CONFIG.rivalEfficiency[Math.min(week-1,4)],
+    baseEfficiency: CONFIG.rivalEfficiency[Math.min(week-1,4)],
+    coins: id === 'bongo' ? CONFIG.bongoStartCoins : 0,   // fase5: finale-voorsprong
+    loyalty: freshLoyalty(),
+    lastMoves: [], plannedSabotage: null,
+    upgradeLevel: 0, revLevel: 0,
+    shelves: {},
+    bluffedThisWeek: false,
+    revengeDays: 0,
+    automations: [],
+    lastDeptDay: -99,               // fase5: cooldown-tracker voor rival-afdelingsuitbreiding
+  };
+}
+let state = null;
+function freshState(){
+  return {
+    screen: 'title',
+    week: 1, day: 1, dayTimer: 0,
+    coins: CONFIG.startCoins,
+    player: freshPlayer(),
+    rival: freshRival(1),
+    customers: [],
+    marketShare: 0.5,
+    dailyRevenue: { player: 0, rival: 0 },
+    dayStats: { served: 0, angry: 0, rivalServed: 0, rivalAngry: 0, rescued: 0 },
+    history: [],
+    loyHistory: [],                 // per dag snapshot speler-loyalty (verlies-analyse)
+    hand: [], sabUsedThisWeek: false,
+    activeSabotage: {},             // effecten actief vandaag (door speler op rival)
+    rivalSabotage: {},              // effecten actief vandaag (door rival op jou)
+    alliance: null,                 // {type, daysLeft, claims:{you:[],rival:[]}}
+    allianceOffer: null,            // {type} aangeboden deze avond
+    stalemate: 0,                   // dagen-teller patstelling
+    playerLastMove: null,
+    retryBonus: 0,
+    endless: false, endlessWeek: 0, diff: 1.0,
+    rivalBluffPending: null,
+    meta: { wonWeeks: [], crowns: [], skins: ['rood'], hats: ['geen'],
+            activeSkin: 'rood', activeHat: 'geen',
+            endlessBest: 0, settings: { volume: 0.8, muted: false } },
+  };
+}
+function initShelves(p){
+  for (const d of p.departments)
+    if (!p.shelves[d]) p.shelves[d] = { stock: CONFIG.shelfCapacity[0], level: p.shelfLevel, pinned: false };
+}
+function initRivalShelves(r){
+  for (const d of r.departments) if (!(d in r.shelves)) r.shelves[d] = 1.0;
+}
+
+/* --------------------------- Entity pools ---------------------------- */
+function makeCustomerPool(n){
+  const pool = [];
+  for (let i = 0; i < n; i++) pool.push({
+    active:false, x:0, y:0, side:0, dir:1, phase:'walkIn', target:null,
+    wishes:[], wishIdx:0, patience:0, angry:false, carrying:0, cartValue:0,
+    checkoutT:0, speed:CONFIG.customerWalkSpeed, color:'#fff',
+    rivalT:0, rivalServeOk:false, exitX:0, switchedFromRival:false,
+    arch:'gezin', slipping:0, slipT:0,
+  });
+  return pool;
+}
+function makeApe(idx){ return { idx, x:L.crate.x + 40, y:L.floorY, phase:'idle', targetDept:null, carry:0, tx:0 }; }
+/* =========================== SIM SYSTEMS ============================= */
+function deptInfo(id){ return DATA.departments.find(d => d.id === id); }
+function archInfo(id){ return DATA.archetypes.find(a => a.id === id); }
+function itemPrice(deptId, p){
+  let price = CONFIG.itemPriceBase * CONFIG.deptPriceFactor[deptId];
+  if (p && p.todaySale) price *= CONFIG.marketingSalePriceMult;
+  return price;
+}
+function shelfX(p, deptId){
+  const i = p.departments.indexOf(deptId);
+  const slot = L.shelfSlots[Math.min(i, L.shelfSlots.length - 1)];
+  return slot.x + L.shelfW / 2;
+}
+
+/* --- winkelkeuze-score (GDD §4.1, archetype + sabotage + alliance) --- */
+function shopScore(side, wishes, arch, st){
+  const p = st.player, r = st.rival;
+  const myDepts = side === 0 ? p.departments : r.departments;
+  const otherDepts = side === 0 ? r.departments : p.departments;
+  const myLoy = side === 0 ? p.loyalty : r.loyalty;
+  let match = 0;
+  for (const w of wishes){
+    if (myDepts.includes(w)){
+      let m = otherDepts.includes(w) ? 1 : CONFIG.nicheAttraction;
+      // nep-recensie verlaagt rival populairste afdeling
+      if (side === 1 && st.rivalSabotage.fakeReview === w) m *= CONFIG.sabFakeReviewMult;
+      if (side === 0 && st.activeSabotage.fakeReview === w) m *= CONFIG.sabFakeReviewMult;
+      m *= (archInfo(arch).prefs[w] || 1);
+      match += m;
+    }
+  }
+  if (match === 0) return 0.0001;
+  const loyalty = Math.pow(myLoy[arch] / 50, CONFIG.loyaltyPullExponent);
+  let queue = 0;
+  for (const c of st.customers){
+    if (c.active && c.side === side && (c.phase === 'checkout' || c.phase === 'toRegister' || c.phase === 'rivalInside')) queue++;
+  }
+  const queueFactor = Math.max(0.3, 1 - queue * CONFIG.queueFactorPerWaiting);
+  let priceFactor = 1;
+  if (side === 0 && p.todaySale) priceFactor = 1.15;
+  // prijsgerucht: rival lijkt duurder
+  if (side === 1 && st.rivalSabotage.priceRumor) priceFactor *= CONFIG.sabPriceRumorPriceMult;
+  if (side === 0 && st.activeSabotage.priceRumor) {}  // (alleen op rival mogelijk)
+  let saleBias = (side === 0 && p.todaySale) ? CONFIG.marketingSaleCustomerMult : 1;
+  // straatartiest: +20% jouw kant
+  let artistBias = (side === 0 && st.activeSabotage.artist) ? CONFIG.sabStreetArtistBias : 1;
+  // alliantie marktverdeling: claim-bias
+  let claimBias = 1;
+  if (st.alliance && st.alliance.type === 'marktverdeling'){
+    if (side === 0 && st.alliance.claims.you.includes(arch)) claimBias = CONFIG.allianceClaimBias;
+    if (side === 1 && st.alliance.claims.rival.includes(arch)) claimBias = CONFIG.allianceClaimBias;
+  }
+  return loyalty * match * queueFactor * priceFactor * saleBias * artistBias * claimBias;
+}
+
+function spawnCustomer(st){
+  const c = st.customers.find(c => !c.active);
+  if (!c) return;
+  const arch = pick(DATA.archetypes);
+  c.arch = arch.id;
+  const allDepts = new Set([...st.player.departments, ...st.rival.departments]);
+  const deptArr = [...allDepts];
+  const nWishes = randInt(1, Math.min(CONFIG.customerWishMax, deptArr.length));
+  c.wishes.length = 0;
+  for (let i = 0; i < nWishes; i++){
+    let total = 0;
+    for (const d of deptArr) total += deptInfo(d).popularity * (arch.prefs[d] || 1);
+    let roll = rand() * total, chosen = deptArr[0];
+    for (const d of deptArr){ roll -= deptInfo(d).popularity * (arch.prefs[d] || 1); if (roll <= 0){ chosen = d; break; } }
+    c.wishes.push(chosen);
+  }
+  const sL = shopScore(0, c.wishes, c.arch, st);
+  const sR = shopScore(1, c.wishes, c.arch, st);
+  c.side = rand() < sL / (sL + sR) ? 0 : 1;
+  c.active = true;
+  c.angry = false; c.carrying = 0; c.cartValue = 0; c.wishIdx = 0; c.patience = 0;
+  c.checkoutT = 0; c.rivalT = 0; c.switchedFromRival = false; c.slipping = 0; c.slipT = 0;
+  c.queuePenalized = false;        // fase5: reset wachtrij-loyaltystraf-vlag per klant
+  c.y = L.floorY;
+  c.color = arch.color;
+  if (c.side === 0){ c.x = L.spawnL; c.dir = 1; c.phase = 'walkIn'; c.target = L.doorL.x; }
+  else { c.x = L.spawnR; c.dir = -1; c.phase = 'walkIn'; c.target = L.doorR.x; }
+}
+
+function updateCustomer(c, dt, st){
+  const p = st.player, r = st.rival;
+  switch (c.phase){
+    case 'walkIn': {
+      c.x += c.dir * c.speed * dt;
+      if ((c.dir === 1 && c.x >= c.target) || (c.dir === -1 && c.x <= c.target)){
+        c.x = c.target;
+        if (c.side === 0){ c.phase = 'toShelf'; nextWish(c, st); }
+        else {
+          // bananenschil: rival-klant kan uitglijden vóór de deur
+          if (st.activeSabotage.banana && rand() < CONFIG.sabBananaPull &&
+              st.player.departments.some(d => c.wishes.includes(d))){
+            c.phase = 'slip'; c.slipT = 0.9; c.slipping = 1; break;
+          }
+          c.phase = 'rivalInside';
+          c.rivalT = 2.0 + rand() * 2.0;
+          c.rivalServeOk = rand() < (st._rivalEffNow || r.efficiency);
+          c.x = L.doorR.x + 40 + rand() * 240;
+        }
+      }
+      break;
+    }
+    case 'slip': {
+      if (c.slipping === 1){ c.slipping = 2; sfx.slidewhistle(); } // Fase 4
+      c.slipT -= dt;
+      if (c.slipT <= 0){
+        c.slipping = 0; c.side = 0; c.switchedFromRival = true;
+        c.angry = false; c.wishIdx = 0;
+        let w = 0; for (let i=0;i<c.wishes.length;i++) if (p.departments.includes(c.wishes[i])) c.wishes[w++]=c.wishes[i];
+        c.wishes.length = Math.max(1, w);
+        c.x = L.doorL.x; c.phase = 'toShelf'; nextWish(c, st);
+      }
+      break;
+    }
+    case 'toShelf': {
+      const tx = c.target; const d = tx - c.x;
+      if (Math.abs(d) > 3){ c.x += Math.sign(d) * c.speed * dt; }
+      else {
+        c.x = tx;
+        const dept = c.wishes[c.wishIdx];
+        const sh = p.shelves[dept];
+        if (sh && sh.stock > 0){
+          sh.stock--; c.carrying++;
+          c.cartValue += itemPrice(dept, p);
+          c.wishIdx++; c.patience = 0;
+          nextWish(c, st);
+        } else { c.phase = 'waitShelf'; c.patience = CONFIG.customerPatienceSec; }
+      }
+      break;
+    }
+    case 'waitShelf': {
+      const dept = c.wishes[c.wishIdx];
+      const sh = p.shelves[dept];
+      if (sh && sh.stock > 0){ c.phase = 'toShelf'; break; }
+      c.patience -= dt;
+      if (c.patience <= 0){
+        c.angry = true;
+        loyAdd(p.loyalty, c.arch, CONFIG.loyaltyEmpty);
+        st.dayStats.angry++;
+        c.phase = 'angryCross';
+        c.target = L.doorR.x + 60 + rand() * 200;
+        sfx.bozePruttel();  // Fase 4 audio
+      }
+      break;
+    }
+    case 'angryCross': {
+      const d = c.target - c.x;
+      c.x += Math.sign(d) * c.speed * 1.25 * dt;
+      if (Math.abs(d) < 4){
+        c.side = 1; c.phase = 'rivalInside';
+        c.rivalT = 1.6; c.rivalServeOk = rand() < (st._rivalEffNow || r.efficiency); c.angry = false;
+      }
+      break;
+    }
+    case 'toRegister': {
+      const d = c.target - c.x;
+      if (Math.abs(d) > 3) c.x += Math.sign(d) * c.speed * dt;
+      else {
+        c.x = c.target; c.phase = 'checkout';
+        let t = CONFIG.checkoutTimeSec;
+        if (p.hasAutoKassa) t *= CONFIG.autoKassaCheckoutMult;
+        else if (p.hasCashierApe) t *= CONFIG.cashierApeCheckoutMult;
+        c.checkoutT = t;
+      }
+      break;
+    }
+    case 'checkout': {
+      c.checkoutT -= dt;
+      if (c.checkoutT <= 0){
+        let rev = Math.round(c.cartValue);
+        // alliantie gedeelde levering: revenue-split naar de ander
+        if (st.alliance && st.alliance.type === 'levering'){
+          const give = Math.round(rev * CONFIG.allianceRevenueSplit);
+          rev -= give; st.dailyRevenue.rival += give; r.coins += give;
+        }
+        st.coins += rev; st.dailyRevenue.player += rev; st.dayStats.served++;
+        sfx.chaChing();                      // Fase 4 audio
+        spawnCoinArc(c.x, L.floorY - 30);  // Fase 4 coin arc
+        let dl = CONFIG.loyaltyBuy;
+        if (p.hasLoyaltyCard) dl += CONFIG.marketingLoyaltyCardBonus;
+        if (p.todaySale) dl += 3;
+        loyAdd(p.loyalty, c.arch, dl);
+        if (c.switchedFromRival){ loyAdd(p.loyalty, c.arch, CONFIG.loyaltyRescueBonus); st.dayStats.rescued++; }
+        c.phase = 'exit'; c.exitX = L.spawnL; c.dir = -1;
+      }
+      break;
+    }
+    case 'rivalInside': {
+      c.rivalT -= dt;
+      if (c.rivalT <= 0){
+        if (c.rivalServeOk){
+          let rev = Math.round(
+            (CONFIG.rivalBaseRevPerCustomer + r.revLevel * CONFIG.rivalUpgradeRevBonus) *
+            CONFIG.rivalIncomeMult[Math.min(st.week - 1, 4)] * st.diff * (0.8 + rand() * 0.5));
+          if (st.alliance && st.alliance.type === 'levering'){
+            const give = Math.round(rev * CONFIG.allianceRevenueSplit);
+            rev -= give; st.dailyRevenue.player += give; st.coins += give;
+          }
+          st.dailyRevenue.rival += rev; r.coins += rev;
+          loyAdd(r.loyalty, c.arch, CONFIG.loyaltyBuy);
+          st.dayStats.rivalServed++;
+          c.phase = 'exit'; c.exitX = L.spawnR; c.dir = 1;
+        } else {
+          loyAdd(r.loyalty, c.arch, Math.round(CONFIG.loyaltyEmpty * 0.6));
+          st.dayStats.rivalAngry++;
+          if (rand() < 0.5 && st.player.departments.some(d => c.wishes.includes(d))){
+            c.side = 0; c.angry = true; c.switchedFromRival = true;
+            c.phase = 'crossToYou'; c.target = L.doorL.x;
+          } else { c.phase = 'exit'; c.exitX = L.spawnR; c.dir = 1; }
+        }
+      }
+      break;
+    }
+    case 'crossToYou': {
+      const d = c.target - c.x;
+      c.x += Math.sign(d) * c.speed * 1.2 * dt;
+      if (Math.abs(d) < 4){
+        c.angry = false; c.wishIdx = 0;
+        let w = 0;
+        for (let i = 0; i < c.wishes.length; i++)
+          if (st.player.departments.includes(c.wishes[i])) c.wishes[w++] = c.wishes[i];
+        c.wishes.length = Math.max(1, w);
+        c.phase = 'toShelf'; nextWish(c, st);
+      }
+      break;
+    }
+    case 'exit': {
+      c.x += c.dir * c.speed * dt;
+      if (c.x < L.spawnL - 5 || c.x > L.spawnR + 5) c.active = false;
+      break;
+    }
+  }
+}
+function nextWish(c, st){
+  while (c.wishIdx < c.wishes.length && !st.player.departments.includes(c.wishes[c.wishIdx])) c.wishIdx++;
+  if (c.wishIdx >= c.wishes.length){
+    if (c.carrying > 0){
+      // fase5: wachtrij-loyaltystraf (BUG-002 / GDD §4.3). Telt klanten die al bij/onderweg
+      // naar de kassa staan; bij een lange rij raakt deze klant geïrriteerd (1x per klant).
+      if (!c.queuePenalized){
+        let ahead = 0;
+        for (const o of st.customers){
+          if (o.active && o !== c && o.side === 0 && (o.phase === 'toRegister' || o.phase === 'checkout')) ahead++;
+        }
+        if (ahead >= CONFIG.loyaltyQueueThreshold){
+          loyAdd(st.player.loyalty, c.arch, CONFIG.loyaltyQueue);
+          c.queuePenalized = true;
+        }
+      }
+      c.phase = 'toRegister'; c.target = L.register.x + L.register.w / 2;
+    }
+    else { c.phase = 'exit'; c.exitX = L.spawnL; c.dir = -1; }
+    return;
+  }
+  c.phase = 'toShelf';
+  c.target = shelfX(st.player, c.wishes[c.wishIdx]);
+}
+
+function updateApe(ape, dt, st){
+  const p = st.player;
+  let speed = CONFIG.apeWalkSpeed + p.apeSpeedUps * CONFIG.apeSpeedUpgradeBonus;
+  if (st.activeSabotage.headhunt) speed *= CONFIG.sabHeadhuntApeSpeed;
+  switch (ape.phase){
+    case 'idle': {
+      let best = null, bestRatio = 1;
+      for (const d of p.departments){
+        if (p.automations.includes(d)) continue;
+        const sh = p.shelves[d];
+        const cap = CONFIG.shelfCapacity[sh.level - 1];
+        let claimed = false;
+        for (const a of p.apes) if (a !== ape && a.targetDept === d) claimed = true;
+        if (claimed) continue;
+        const ratio = sh.stock / cap;
+        if (sh.pinned && ratio < 1){ best = d; bestRatio = -1; break; }
+        if (ratio < bestRatio && ratio < 0.99){ best = d; bestRatio = ratio; }
+      }
+      if (best){ ape.targetDept = best; ape.phase = 'toCrate'; ape.tx = L.crate.x + L.crate.w / 2; }
+      break;
+    }
+    case 'toCrate': {
+      const d = ape.tx - ape.x;
+      if (Math.abs(d) > 3) ape.x += Math.sign(d) * speed * dt;
+      else {
+        const wh = st.warehouse[ape.targetDept];
+        if (wh && wh.stock > 0){
+          ape.carry = Math.min(CONFIG.apeStockPerTrip, wh.stock);
+          wh.stock -= ape.carry; ape.phase = 'toShelf'; ape.tx = shelfX(p, ape.targetDept);
+        } else ape.phase = 'waitCrate';
+      }
+      break;
+    }
+    case 'waitCrate': {
+      const wh = st.warehouse[ape.targetDept];
+      if (wh && wh.stock > 0) ape.phase = 'toCrate';
+      else { ape.targetDept = null; ape.phase = 'idle'; }
+      break;
+    }
+    case 'toShelf': {
+      const d = ape.tx - ape.x;
+      if (Math.abs(d) > 3) ape.x += Math.sign(d) * speed * dt;
+      else {
+        const sh = p.shelves[ape.targetDept];
+        const cap = CONFIG.shelfCapacity[sh.level - 1];
+        const put = Math.min(ape.carry, cap - sh.stock);
+        sh.stock += put; ape.carry = 0;
+        if (sh.pinned && sh.stock >= cap) sh.pinned = false;
+        ape.targetDept = null; ape.phase = 'idle';
+      }
+      break;
+    }
+  }
+}
+
+function updateWarehouse(dt, st){
+  // speler-magazijn: refill (alliantie sneller, headhunt n.v.t. op speler)
+  let refillSec = CONFIG.warehouseRefillSec;
+  if (st.alliance && st.alliance.type === 'levering') refillSec /= CONFIG.allianceRefillMult;
+  for (const d of st.player.departments){
+    if (!st.warehouse[d]) st.warehouse[d] = { stock: 6, t: 0 };
+    const wh = st.warehouse[d];
+    wh.t += dt;
+    while (wh.t >= refillSec){ wh.t -= refillSec; if (wh.stock < CONFIG.warehouseCap) wh.stock++; }
+    if (st.player.automations.includes(d)){
+      const sh = st.player.shelves[d];
+      const cap = CONFIG.shelfCapacity[sh.level - 1];
+      if (sh.stock < cap && wh.stock > 0){
+        sh.autoT = (sh.autoT || 0) + dt;
+        if (sh.autoT >= 1.2){ sh.autoT -= 1.2; sh.stock++; wh.stock--; }
+      }
+    }
+  }
+  // rival-schappen visueel; sabotage beïnvloedt zijn vul-snelheid
+  let rivalEff = st.rival.efficiency;
+  if (st.activeSabotage.headhunt) rivalEff *= CONFIG.sabHeadhuntRivalEff;
+  let rivalRefillMult = 1;
+  if (st.activeSabotage.bribery) rivalRefillMult *= CONFIG.sabSupplyBriberyMult;
+  if (st.alliance && st.alliance.type === 'levering') rivalRefillMult *= CONFIG.allianceRefillMult;
+  // stroomstoring: rival-automation uit (visueel trager bijvullen)
+  if (st.activeSabotage.outage) rivalRefillMult *= 0.6;
+  for (const d of st.rival.departments){
+    if (!(d in st.rival.shelves)) st.rival.shelves[d] = 1;
+    const drain = (1.05 - rivalEff) * 0.10 * dt;
+    st.rival.shelves[d] = Math.max(0, st.rival.shelves[d] - drain * (0.5 + rand()));
+    if (st.rival.shelves[d] < 0.15 && rand() < rivalEff * rivalRefillMult * dt * 0.8)
+      st.rival.shelves[d] = 1.0;
+  }
+}
+
+function effectiveRivalEff(st){
+  let e = st.rival.efficiency;
+  if (st.activeSabotage.headhunt) e *= CONFIG.sabHeadhuntRivalEff;
+  return e;
+}
+
+function updateDay(dt, st){
+  st.dayTimer += dt;
+  st.spawnT -= dt;
+  if (st.spawnT <= 0){
+    let interval = CONFIG.customerSpawnBase * CONFIG.customerSpawnDayCurve[Math.min(st.day - 1, 6)];
+    if (st.player.todayFlyer) interval *= CONFIG.marketingFlyerSpawnMult;
+    if (st.player.todaySale)  interval /= CONFIG.marketingSaleCustomerMult;
+    interval /= st.diff;          // endless: hogere diff = meer klanten/druk
+    st.spawnT = interval * (0.7 + rand() * 0.6);
+    let activeN = 0; for (const c of st.customers) if (c.active) activeN++;
+    if (activeN < CONFIG.maxCustomers) spawnCustomer(st);
+  }
+  updateWarehouse(dt, st);
+  // rival-eff toepassen via veld zodat klant-sim de gesaboteerde waarde gebruikt
+  st._rivalEffNow = effectiveRivalEff(st);
+  for (const ape of st.player.apes) updateApe(ape, dt, st);
+  for (const c of st.customers) if (c.active) updateCustomer(c, dt, st);
+  if (st.dayTimer >= CONFIG.dayLengthSec) endDay(st);
+}
+/* =========================== DAY / EVENING FLOW ====================== */
+let syncOverlaysRef = null;
+function uiSync(st){ if (syncOverlaysRef) syncOverlaysRef(st); }
+
+function startDay(st){
+  st.screen = 'day';
+  st.dayTimer = 0; st.spawnT = 1.0;
+  st.dailyRevenue.player = 0; st.dailyRevenue.rival = 0;
+  st.dayStats = { served:0, angry:0, rivalServed:0, rivalAngry:0, rescued:0 };
+  for (const c of st.customers) c.active = false;
+  st.player.apes.length = 0;
+  for (let i = 0; i < st.player.apeCount; i++){ const a = makeApe(i); a.x = L.crate.x + 50 + i * 36; st.player.apes.push(a); }
+  if (!st.warehouse) st.warehouse = {};
+  initShelves(st.player); initRivalShelves(st.rival);
+  for (const d of st.player.departments) if (!st.warehouse[d]) st.warehouse[d] = { stock: 8, t: 0 };
+  // apply this-day sabotage announced last evening by the rival (against you)
+  st.rivalSabotage = st._pendingRivalSab || {};
+  st._pendingRivalSab = {};
+  // tutorial flags reset per day
+  st._tipShownEmpty = st._tipShownEmpty || false;
+  // Fase 4: dag-muziek + tempo + dag-transitie animatie
+  AudioEngine.setDayTempo(st.day);
+  if (!AudioEngine.muted){
+    AudioEngine.ensureCtx();
+    if (!AudioEngine.started) AudioEngine.startMusic('dag');
+    else AudioEngine.crossfade('dag');
+  }
+  ShareAnim.target = st.marketShare; ShareAnim.current = st.marketShare;
+  DayNightAnim.start('open');
+  uiSync(st);
+}
+
+function endDay(st){
+  for (const c of st.customers) c.active = false;
+  const rp = st.dailyRevenue.player, rr = st.dailyRevenue.rival;
+  const dayShare = (rp + rr) > 0 ? rp / (rp + rr) : 0.5;
+  st.prevShare = st.marketShare;
+  st.marketShare = CONFIG.shareSmoothing * st.marketShare + (1 - CONFIG.shareSmoothing) * dayShare;
+  st.history.push({ day: st.day, week: st.week, rp, rr, share: st.marketShare });
+  // loyalty-snapshot voor verlies-analyse
+  const snap = {}; for (const a of ARCH_IDS) snap[a] = st.player.loyalty[a];
+  st.loyHistory.push({ day: st.day, loy: snap });
+  // dagvlaggen + speler-sabotage (alleen 1 dag actief) resetten ná de dag
+  st.player.todayFlyer = false; st.player.todaySale = false;
+  st.activeSabotage = {};
+  // patstelling-teller (alliantie-trigger): share tussen 40-60%?
+  if (st.marketShare >= CONFIG.allianceMinShare && st.marketShare <= CONFIG.allianceMaxShare) st.stalemate++;
+  else st.stalemate = 0;
+  // Fase 4: avond-muziek + luifel-sluit animatie
+  if (!AudioEngine.muted) AudioEngine.crossfade('avond');
+  DayNightAnim.start('close');
+  st.screen = 'evening';
+  st.allianceOffer = null;
+  buildEvening(st);
+  uiSync(st);
+}
+
+/* --- avond: upgrade-kaarten + sabotage-hand + alliantie-aanbod --- */
+function deptCost(p){ return Math.round(CONFIG.deptCostBase * Math.pow(CONFIG.deptCostGrowth, p.departments.length - 1)); }
+function weekPool(st){
+  const wd = DATA.weeks[Math.min(st.week-1,4)];
+  return (wd && wd.pool) ? wd.pool : DATA.departments.map(d=>d.id);
+}
+function availableUpgrades(st){
+  const p = st.player; const out = [];
+  const pool = weekPool(st);
+  const lockedDepts = DATA.departments.filter(d => !p.departments.includes(d.id) && (st.endless || pool.includes(d.id)));
+  if (lockedDepts.length) out.push({ id:'dept', cost:deptCost(p), payload:pick(lockedDepts).id });
+  if (p.apeCount < 3) out.push({ id:'hire', cost:CONFIG.hireCost[p.apeCount - 1] });
+  if (!p.hasCashierApe) out.push({ id:'cashier', cost:CONFIG.hireCost[2] });
+  const autoCandidates = p.departments.filter(d => !p.automations.includes(d));
+  if (autoCandidates.length) out.push({ id:'automation', cost:CONFIG.automationCost, payload:pick(autoCandidates) });
+  if (!p.hasAutoKassa) out.push({ id:'autokassa', cost:CONFIG.autoKassaCost });
+  if (p.shelfLevel < 3) out.push({ id:'shelfLvl', cost:CONFIG.shelfLevelCost[p.shelfLevel - 1] });
+  if (p.apeSpeedUps < 3) out.push({ id:'apeSpeed', cost:CONFIG.apeSpeedCost });
+  out.push({ id:'flyer', cost:CONFIG.marketingFlyerCost });
+  if (!p.hasLoyaltyCard) out.push({ id:'loyalty', cost:CONFIG.marketingLoyaltyCardCost });
+  out.push({ id:'sale', cost:CONFIG.marketingSaleCost });
+  return out;
+}
+function weightedShuffleTake(arr, st, n){
+  // lichte situationele weging: afdeling als je er weinig hebt; sale/flyer minder vaak
+  const weighted = arr.map(c => {
+    let w = 1;
+    if (c.id === 'dept') w = st.player.departments.length < 3 ? 2.2 : 1.2;
+    if (c.id === 'hire') w = 1.6;
+    if (c.id === 'shelfLvl') w = 1.4;
+    if (c.id === 'flyer' || c.id === 'sale') w = 0.8;
+    return { c, w };
+  });
+  const out = [];
+  while (out.length < n && weighted.length){
+    let tot = 0; for (const x of weighted) tot += x.w;
+    let roll = rand() * tot, idx = 0;
+    for (let i=0;i<weighted.length;i++){ roll -= weighted[i].w; if (roll<=0){ idx=i; break; } }
+    out.push(weighted[idx].c); weighted.splice(idx,1);
+  }
+  return out;
+}
+function buildEvening(st){
+  const avail = availableUpgrades(st);
+  st.eveningCards = weightedShuffleTake(avail, st, 3);
+  const structural = (id) => ['dept','hire','cashier','automation','autokassa','shelfLvl','apeSpeed'].includes(id);
+  if (!st.eveningCards.some(c => structural(c.id))){
+    const sw = avail.find(c => structural(c.id));
+    if (sw) st.eveningCards[0] = sw;
+  }
+  // sabotage-hand: alleen vanaf week 2 (deck volledig) — week 1 enkel gratis schil dag 3
+  // alliantie-aanbod (vanaf week 2, patstelling)
+  st.allianceOffer = null;
+  if (st.week >= 3 && !st.alliance && st.stalemate >= CONFIG.allianceStaleDays && st.day < 7){
+    // rival biedt aan op basis van persoonlijkheid + stand
+    const r = st.rival;
+    let willOffer = false;
+    if (r.id === 'kiki') willOffer = true;
+    else if (r.id === 'bruno') willOffer = st.marketShare >= 0.48;       // nichejager: liever pact als gelijk
+    else if (r.id === 'bongo') willOffer = st.marketShare > 0.55;        // saboteur: alleen als hij onder staat (jij boven 55%)
+    if (willOffer) st.allianceOffer = { from:'rival' };
+  } else if ((st.week >= 3 || st.endless) && !st.alliance && st.day < 7){
+    // speler kan altijd zelf voorstellen (rival accepteert o.b.v. persoonlijkheid)
+    st.allianceOffer = { from:'player' };
+  }
+  // gratis Bananenschil week 1 dag 3 (tutorial)
+  if (st.week === 1 && !st.endless && st.day === 3 && !st._gotFreeBanana){
+    if (!st.hand.some(h => h.id === 'banana')){ st.hand.push({ id:'banana', free:true }); }
+    st._gotFreeBanana = true;
+  }
+  // rubber-band: speler >15% achter op dag 5 → gratis sabotagekaart aanbieden
+  if (st.day >= 5 && st.marketShare < 0.5 - CONFIG.rubberBandPlayerPct/100 && !st._rubberGiven){
+    const give = pick(DATA.sabotage);
+    if (!st.hand.some(h => h.id === give.id)) st.hand.push({ id: give.id, free:true });
+    st._rubberGiven = true;
+  }
+}
+
+function applyUpgrade(st, card){
+  const p = st.player;
+  if (st.coins < card.cost) return false;
+  st.coins -= card.cost;
+  switch (card.id){
+    case 'dept':
+      p.departments.push(card.payload);
+      p.shelves[card.payload] = { stock: 4, level: p.shelfLevel, pinned: false };
+      st.warehouse[card.payload] = { stock: 8, t: 0 };
+      break;
+    case 'hire': p.apeCount++; break;
+    case 'cashier': p.hasCashierApe = true; break;
+    case 'automation': p.automations.push(card.payload); break;
+    case 'autokassa': p.hasAutoKassa = true; break;
+    case 'shelfLvl': p.shelfLevel++; for (const d in p.shelves) p.shelves[d].level = p.shelfLevel; break;
+    case 'apeSpeed': p.apeSpeedUps++; break;
+    case 'flyer': p.todayFlyer = true; break;
+    case 'loyalty': p.hasLoyaltyCard = true; break;
+    case 'sale': p.todaySale = true; break;
+  }
+  p.upgrades.push(card.id);
+  st.playerLastMove = { id: card.id, payload: card.payload || null };
+  return true;
+}
+
+/* =========================== SABOTAGE SYSTEM ======================== */
+function drawHand(st){
+  // hand van 3 random uit de 8 (week 2+); week 1 leeg behalve gratis schil
+  st.hand = [];
+  st.sabUsedThisWeek = false;
+  if (st.week >= 2 || st.endless){
+    const deck = DATA.sabotage.slice();
+    for (let i=deck.length-1;i>0;i--){ const j=Math.floor(rand()*(i+1)); const t=deck[i]; deck[i]=deck[j]; deck[j]=t; }
+    st.hand = deck.slice(0,3).map(s => ({ id:s.id, free:false }));
+  }
+}
+function sabData(id){ return DATA.sabotage.find(s => s.id === id); }
+function sabCost(id){ const s = sabData(id); return CONFIG.sabotageCosts[s.idx]; }
+// speler speelt sabotage tegen rival → effect actief volgende dag (activeSabotage)
+function playerPlaySabotage(st, handIdx){
+  if (st._sabUsedTonight) return false;
+  const h = st.hand[handIdx]; if (!h) return false;
+  const cost = h.free ? 0 : sabCost(h.id);
+  if (st.coins < cost) return false;
+  st.coins -= cost;
+  applySabotageEffect(st.activeSabotage, h.id, st, true);
+  st._sabUsedTonight = true;
+  sfx.sabotageString(); Shake.add(6, 3); // Fase 4 audio + shake
+  st._sabotagedThisWeek = true;          // Fase 6: t.b.v. sabWin-achievement
+  if (typeof Ach!=='undefined') Ach.evaluate(st, { sabotagePlayed:true }); // Fase 6
+  // verbruik kaart uit hand
+  st.hand.splice(handIdx, 1);
+  return true;
+}
+// vult een effects-object op basis van kaart-id
+function applySabotageEffect(effects, id, st, byPlayer){
+  switch (id){
+    case 'banana': effects.banana = true; break;
+    case 'priceRumor':
+      effects.priceRumor = true;
+      // loyalty-effect direct op doelwit
+      if (byPlayer) loyAddAll(st.rival.loyalty, CONFIG.loyaltyPriceRumor);
+      else loyAddAll(st.player.loyalty, CONFIG.loyaltyPriceRumor);
+      break;
+    case 'bribery': effects.bribery = true; break;
+    case 'fakeReview': {
+      // meest populaire afdeling van het doelwit
+      const tgt = byPlayer ? st.rival : st.player;
+      let best = tgt.departments[0], bestPop = -1;
+      for (const d of tgt.departments){ const pop = deptInfo(d).popularity; if (pop > bestPop){ bestPop = pop; best = d; } }
+      effects.fakeReview = best;
+      break;
+    }
+    case 'headhunt': effects.headhunt = true; break;
+    case 'artist': effects.artist = true; break;
+    case 'monsters': {
+      // +loyalty bij 2 random archetypes voor de speler (defensief, alleen speler-kant zinvol)
+      const tgtLoy = byPlayer ? st.player.loyalty : st.rival.loyalty;
+      const ids = ARCH_IDS.slice();
+      for (let i=ids.length-1;i>0;i--){ const j=Math.floor(rand()*(i+1)); const t=ids[i]; ids[i]=ids[j]; ids[j]=t; }
+      loyAdd(tgtLoy, ids[0], CONFIG.loyaltyMonsters);
+      loyAdd(tgtLoy, ids[1], CONFIG.loyaltyMonsters);
+      break;
+    }
+    case 'outage': effects.outage = true; break;
+  }
+}
+/* =========================== ALLIANCE SYSTEM ======================== */
+function startAlliance(st, type, youClaims){
+  // youClaims gebruikt bij marktverdeling (2 archetypes); rival pakt de andere 2
+  let claims = null;
+  if (type === 'marktverdeling'){
+    const you = (youClaims && youClaims.length === 2) ? youClaims : ARCH_IDS.slice(0,2);
+    const rivalClaims = ARCH_IDS.filter(a => !you.includes(a));
+    claims = { you, rival: rivalClaims };
+  }
+  st.alliance = { type, daysLeft: CONFIG.allianceDays, claims: claims || { you:[], rival:[] } };
+  st.allianceOffer = null;
+  sfx.handshake(); // Fase 4 audio
+  if (typeof Ach!=='undefined') Ach.evaluate(st, { allianceFormed:true }); // Fase 6
+}
+function breakAlliance(st){
+  if (!st.alliance) return;
+  loyAddAll(st.player.loyalty, -CONFIG.allianceBreakPenalty);
+  st.alliance = null;
+  st.rival.revengeDays = 2;   // rival saboteert 2 avonden gegarandeerd
+}
+function tickAlliance(st){
+  if (st.alliance){
+    st.alliance.daysLeft--;
+    if (st.alliance.daysLeft <= 0) st.alliance = null;
+  }
+}
+
+/* =========================== RIVAL AI (GDD §4.6) ====================
+   utility: score(actie)=base × persoonlijkheid × situatie × diffRamp     */
+function rivalActionTypes(st){
+  // mogelijke abstracte zetten voor de rival
+  const types = ['invest','copyDept','nicheDept','sabotage','save'];
+  return types;
+}
+function rivalUtility(st, type){
+  const r = st.rival, share = st.marketShare;
+  let base = 1, pw = 1, sit = 1;
+  const diffRamp = (1 + (st.week-1)*0.04) * st.diff;   // begrensde ramp
+  const behind = share - 0.5;   // >0 = speler voor, rival achter
+  switch (type){
+    case 'invest': base = 1.0; break;
+    case 'copyDept': base = st.playerLastMove && st.playerLastMove.id === 'dept' ? 1.4 : 0.5; break;
+    case 'nicheDept': base = 0.9; break;
+    case 'sabotage': base = r.coins >= 60 ? 1.0 : 0.2; break;
+    case 'save': base = r.coins < 50 ? 1.2 : 0.4; break;
+  }
+  // persoonlijkheids-gewichten
+  if (r.id === 'kiki'){
+    if (type === 'copyDept') pw = 2.2;
+    if (type === 'sabotage') pw = 0.5;
+    if (type === 'nicheDept') pw = 0.3;
+  } else if (r.id === 'bruno'){
+    if (type === 'nicheDept') pw = 2.4;
+    if (type === 'copyDept') pw = 0.2;
+    if (type === 'invest') pw = 1.3;
+    if (type === 'sabotage') pw = 0.9;
+  } else if (r.id === 'bongo'){
+    if (type === 'sabotage') pw = 1.4;   // fase5: 2.6→1.4 — Bongo saboteerde zoveel dat hij nooit opbouwde; nu bouwt hij óók
+    if (type === 'invest') pw = 2.0;     // fase5: harder investeren (week 5 was te makkelijk; coins → marktdruk)
+    if (type === 'copyDept') pw = 1.6;   // fase5: laat Bongo de speler matchen i.p.v. 0 afdelingen
+    if (type === 'nicheDept') pw = 1.8;  // fase5: echte breedte-drang zodat de finale bijt
+  }
+  // situatie: als rival achter staat, agressiever (invest/sabotage); als voor, consolideren
+  if (behind > 0.05){ if (type === 'invest' || type === 'sabotage') sit = 1.5; }
+  else if (behind < -0.05){ if (type === 'save') sit = 1.4; }
+  const score = base * pw * sit * diffRamp;
+  if (DEBUG) { st._utilDbg = st._utilDbg || {}; st._utilDbg[type] = +score.toFixed(2); }
+  return score;
+}
+function pickRivalAction(st){
+  let best = null, bestScore = -1;
+  for (const t of rivalActionTypes(st)){
+    const s = rivalUtility(st, t);
+    if (s > bestScore){ bestScore = s; best = t; }
+  }
+  return best;
+}
+
+/* fase5 — gate op rival-afdelingsuitbreiding.
+   Was de #1 oorzaak van de geïnverteerde wk3/4-curve: de rival opende elke avond
+   GRATIS een afdeling die de speler niet had, waardoor onbedienbare wensen
+   gegarandeerd naar hem gingen. Nu kost een afdeling coins, kent een cooldown en
+   een cap (relatief aan speler-breedte + een absoluut plafond). */
+function canRivalOpenDept(st){
+  const r = st.rival;
+  const overPlayer = r.id === 'bongo' ? CONFIG.bongoMaxDeptOverPlayer : CONFIG.rivalMaxDeptOverPlayer;
+  if (r.departments.length >= CONFIG.rivalDeptHardCap) return false;
+  if (r.departments.length >= st.player.departments.length + overPlayer) return false;
+  if (typeof r.lastDeptDay === 'number' && (st.day - r.lastDeptDay) < CONFIG.rivalDeptCooldownDays) return false;
+  if (r.coins < CONFIG.rivalDeptCost) return false;
+  return true;
+}
+function payRivalDept(st){ st.rival.coins -= CONFIG.rivalDeptCost; st.rival.lastDeptDay = st.day; }
+
+/* --- de avond-zet van de rival uitvoeren + dialoog --- */
+function rivalMove(st){
+  const r = st.rival;
+  const rd = DATA.rivals[r.id];
+  const dlg = DATA.dialog[r.id];
+  let line = '...';
+  st._pendingRivalSab = {};       // sabotage tegen jou, actief volgende dag
+  st.rivalLine = '';
+
+  // rubber-banding (rival achter > drempel-dagen): gratis efficiency-bump
+  rubberBandRival(st);
+
+  // verplichte wraak na alliantie-verbreking
+  let forceSab = r.revengeDays > 0;
+  // saboteur counter: als speler vorige avond saboteerde tegen rival
+  let counterSab = (r.id === 'bongo' && st._sabUsedTonight);
+
+  // bluf-zet (Bruno + Bongo, 1x per week) — fase5: kans nu uit CONFIG.rivalBluffChance
+  if ((r.id === 'bruno' || r.id === 'bongo') && !r.bluffedThisWeek && rand() < CONFIG.rivalBluffChance && st.day <= 5){
+    r.bluffedThisWeek = true;
+    const dn = pick(DATA.departments).name;
+    line = pick(dlg.bluff).replace('{x}', dn);
+    st.rivalLine = line; st.screen = 'rivalMove';
+    r.lastMoves.push({ day: st.day, type:'bluff' });
+    finishRivalMove(st); return;
+  }
+
+  // sabotage tegen jou? (persoonlijkheids-kans of geforceerd)
+  const sabChance = CONFIG.rivalSabotageChance[r.id] || 0.1;
+  const willSab = forceSab || counterSab || (r.coins >= 60 && rand() < sabChance);
+  if (willSab){
+    const card = pick(DATA.sabotage);
+    // effect treft de speler (byPlayer=false) maar pas volgende dag voor de glij/etc.
+    // priceRumor/monsters hebben directe loyalty-effecten → toepassen op speler nu
+    applySabotageEffect(st._pendingRivalSab, card.id, st, false);
+    r.coins = Math.max(0, r.coins - 40);
+    if (forceSab) line = pick(dlg.revenge || dlg.sab);
+    else if (counterSab) line = pick(dlg.counter || dlg.sab);
+    else line = pick(dlg.sab);
+    line += '  (' + card.announce + ')';     // VERPLICHTE avond-aankondiging vooraf
+    if (r.revengeDays > 0) r.revengeDays--;
+    r.lastMoves.push({ day: st.day, type:'sabotage', card: card.id });
+    st.rivalLine = line; st.screen = 'rivalMove';
+    finishRivalMove(st); return;
+  }
+
+  // anders: utility-keuze voor opbouw
+  const action = pickRivalAction(st);
+  const lm = st.playerLastMove;
+  // fase5: afdeling openen is nu gegate (canRivalOpenDept) + kost coins (payRivalDept).
+  if (action === 'copyDept' && lm && lm.id === 'dept' && lm.payload && !r.departments.includes(lm.payload)
+      && rand() < CONFIG.rivalCopyChance && canRivalOpenDept(st)){
+    payRivalDept(st);
+    r.departments.push(lm.payload); r.shelves[lm.payload] = 1.0;
+    const dn = deptInfo(lm.payload).name + '-afdeling';
+    line = pick(dlg.copy || dlg.own).replace('{x}', dn);
+  } else if (action === 'nicheDept' && canRivalOpenDept(st)){
+    // kies een afdeling die de speler NIET heeft
+    const missing = DATA.departments.filter(d => !st.player.departments.includes(d.id) && !r.departments.includes(d.id));
+    if (missing.length){
+      payRivalDept(st);
+      const d = pick(missing); r.departments.push(d.id); r.shelves[d.id] = 1.0;
+      line = pick(dlg.niche || dlg.own).replace('{x}', d.name + '-afdeling');
+    } else {
+      r.upgradeLevel++; r.revLevel++;
+      r.efficiency = Math.min(CONFIG.rubberBandCapEff, r.efficiency + CONFIG.rivalUpgradeEffBonus*1.5);
+      line = pick(dlg.own);
+    }
+  } else if ((action === 'nicheDept' || action === 'copyDept') && r.coins >= CONFIG.rivalUpgradeCost){
+    // wilde uitbreiden maar mag/kan niet → val terug op investeren (breedte kost nu economie)
+    r.coins -= CONFIG.rivalUpgradeCost;
+    r.upgradeLevel++; r.revLevel++;
+    r.efficiency = Math.min(CONFIG.rubberBandCapEff, r.efficiency + CONFIG.rivalUpgradeEffBonus * 2);
+    line = pick(dlg.own);
+  } else if (action === 'invest' && r.coins >= CONFIG.rivalUpgradeCost){
+    r.coins -= CONFIG.rivalUpgradeCost;
+    r.upgradeLevel++; r.revLevel++;
+    r.efficiency = Math.min(CONFIG.rubberBandCapEff, r.efficiency + CONFIG.rivalUpgradeEffBonus * 2);
+    line = pick(dlg.own);
+  } else {
+    line = pick(dlg.save);
+  }
+  r.lastMoves.push({ day: st.day, type: action });
+  st.rivalLine = line; st.screen = 'rivalMove';
+  finishRivalMove(st);
+}
+function finishRivalMove(st){
+  st.playerLastMove = null;
+  st._sabUsedTonight = false;
+  tickAlliance(st);
+  uiSync(st);
+}
+function rubberBandRival(st){
+  // staat rival > rubberBandRivalDays dagen-gemiddeld achter → kleine eff-bump ("investeerder-oom")
+  // fase5: drempel-dagen en share-grens komen nu uit CONFIG i.p.v. hardcoded waarden.
+  const days = Math.max(1, Math.round(CONFIG.rubberBandRivalDays));
+  if (st.history.length >= days){
+    const last = st.history.slice(-days);
+    const avgShare = last.reduce((a,h)=>a+h.share,0)/last.length;
+    if (avgShare > CONFIG.rubberBandRivalShareLead){    // speler ruim voor → rival krijgt steun
+      st.rival.efficiency = Math.min(CONFIG.rubberBandCapEff, st.rival.efficiency + CONFIG.rubberBandRivalEffBonus);
+      st.rival.upgradeLevel++;
+    }
+  }
+}
+
+/* --- dagrapport → volgende dag / week-einde --- */
+function afterReport(st){
+  if (typeof Ach!=='undefined') Ach.evaluate(st, { dayDone:true }); // Fase 6: "Eerste dag overleefd"
+  if (st.day >= 7){
+    st.screen = 'weekResult';
+    st.weekWon = st.marketShare >= 0.5;
+    if (st.weekWon){ onWeekWon(st); sfx.winFanfare(); spawnConfetti(); } // Fase 4
+    else { sfx.lossTrombone(); } // Fase 4
+    if (typeof Ach!=='undefined') Ach.evaluate(st); // Fase 6: week-resultaat prestaties (na onWeekWon zodat meta up-to-date is)
+  } else { st.day++; startDay(st); }
+  saveGame(st);
+  uiSync(st);
+}
+function onWeekWon(st){
+  const m = st.meta;
+  if (!st.endless){
+    if (!m.wonWeeks.includes(st.week)) m.wonWeeks.push(st.week);
+    if (st.marketShare >= 0.65 && !m.crowns.includes(st.week)) m.crowns.push(st.week);
+    unlockCosmetics(st);
+  } else {
+    st.endlessWeek++;
+    if (st.endlessWeek > m.endlessBest) m.endlessBest = st.endlessWeek;
+  }
+}
+function unlockCosmetics(st){
+  const m = st.meta;
+  const seasonDone = [1,2,3,4,5].every(w => m.wonWeeks.includes(w));
+  for (const sk of DATA.skins){
+    if (m.skins.includes(sk.id)) continue;
+    if (!sk.req) { m.skins.push(sk.id); continue; }
+    if (sk.req.week && m.wonWeeks.includes(sk.req.week)) m.skins.push(sk.id);
+    if (sk.req.season && seasonDone) m.skins.push(sk.id);
+  }
+  for (const ht of DATA.hats){
+    if (m.hats.includes(ht.id)) continue;
+    if (!ht.req){ m.hats.push(ht.id); continue; }
+    if (ht.req.crowns && m.crowns.length >= ht.req.crowns) m.hats.push(ht.id);
+  }
+}
+
+function startWeek(st, week){
+  st.week = week; st.day = 1; st.dayTimer = 0;
+  st.rival = freshRival(week);
+  const wd = DATA.weeks[Math.min(week-1,4)];
+  if (wd && wd.rivalSpeedMult){
+    st.rival.efficiency = Math.min(CONFIG.rubberBandCapEff, st.rival.efficiency * (0.92 + 0.08*wd.rivalSpeedMult));
+    st.rival.baseEfficiency = st.rival.efficiency;
+  }
+  st.marketShare = 0.5; st.stalemate = 0; st.alliance = null;
+  st.history = []; st.loyHistory = [];
+  st.player.loyalty = freshLoyalty();
+  st._gotFreeBanana = false; st._rubberGiven = false;
+  st._sabotagedThisWeek = false; // Fase 6
+  drawHand(st);
+  attachPools(st);
+  st.screen = 'weekIntro';
+  saveGame(st);
+  uiSync(st);
+}
+function startEndlessWeek(st){
+  st.endless = true; st.endlessWeek = (st.endlessWeek||0);
+  st.diff = 1 + (st.endlessWeek) * CONFIG.endlessDiffStep;
+  const rid = pick(['kiki','bruno','bongo']);
+  st.week = 5; st.day = 1; st.dayTimer = 0;
+  st.rival = freshRival(5); st.rival.id = rid;
+  st.rival.efficiency = Math.min(CONFIG.rubberBandCapEff, CONFIG.rivalEfficiency[4] * st.diff);
+  st.rival.baseEfficiency = st.rival.efficiency;
+  st.marketShare = 0.5; st.stalemate = 0; st.alliance = null;
+  st.history = []; st.loyHistory = [];
+  st.player.loyalty = freshLoyalty();
+  st._sabotagedThisWeek = false; // Fase 6
+  drawHand(st);
+  attachPools(st);
+  st.screen = 'weekIntro';
+  saveGame(st);
+  uiSync(st);
+}
+function retryWeek(st){
+  const bonus = Math.round(st.coins * CONFIG.retryBonusPct);
+  const meta = st.meta, wk = st.week, endless = st.endless, ew = st.endlessWeek, diff = st.diff;
+  const ns = freshState();
+  ns.meta = meta; ns.coins = CONFIG.startCoins + bonus; ns.retryBonus = bonus;
+  ns.endless = endless; ns.endlessWeek = ew; ns.diff = diff;
+  state = ns;
+  if (endless) startEndlessWeek(state);
+  else startWeek(state, wk);
+}
+
+/* --- verlies-analyse: grootste loyalty-daling per archetype over dagen --- */
+function lossAnalysis(st){
+  if (st.loyHistory.length < 2) return 'Je kwam net te kort op marktaandeel.';
+  let worst = null, worstDrop = 0, worstFrom = 1, worstTo = 1;
+  for (const a of ARCH_IDS){
+    // grootste piek-tot-dal daling
+    let peak = st.loyHistory[0].loy[a], peakDay = st.loyHistory[0].day;
+    for (const snap of st.loyHistory){
+      if (snap.loy[a] > peak){ peak = snap.loy[a]; peakDay = snap.day; }
+      const drop = peak - snap.loy[a];
+      if (drop > worstDrop){ worstDrop = drop; worst = a; worstFrom = peakDay; worstTo = snap.day; }
+    }
+  }
+  if (!worst || worstDrop < 4) return 'Het bleef close — je miste net wat marktaandeel.';
+  const nm = archInfo(worst).name;
+  return 'Je verloor de <b>' + nm + '</b> in dag ' + worstFrom + '–' + worstTo +
+         ' (loyalty −' + Math.round(worstDrop) + '). Hou hun favoriete schappen vol!';
+}
+/* =========================== SAVE / LOAD ============================= */
+const SAVE_KEY = 'mmr.save.v1';
+const META_KEY = 'mmr.meta.v1';
+let saveEnabled = true;
+function saveMetaOnly(meta){
+  if (!saveEnabled || typeof localStorage === 'undefined') return;
+  try { localStorage.setItem(META_KEY, JSON.stringify({ version:1, meta })); } catch(e){}
+}
+function saveGame(st){
+  if (!saveEnabled || typeof localStorage === 'undefined') return;
+  try {
+    const campaign = {
+      week: st.week, day: st.day, coins: st.coins, marketShare: st.marketShare,
+      endless: st.endless, endlessWeek: st.endlessWeek, diff: st.diff,
+      player: {
+        departments: st.player.departments, apeCount: st.player.apeCount,
+        shelfLevel: st.player.shelfLevel, automations: st.player.automations,
+        hasCashierApe: st.player.hasCashierApe, hasAutoKassa: st.player.hasAutoKassa,
+        apeSpeedUps: st.player.apeSpeedUps, hasLoyaltyCard: st.player.hasLoyaltyCard,
+        loyalty: st.player.loyalty, upgrades: st.player.upgrades,
+      },
+      rival: {
+        id: st.rival.id, departments: st.rival.departments, efficiency: st.rival.efficiency,
+        coins: st.rival.coins, loyalty: st.rival.loyalty,
+        upgradeLevel: st.rival.upgradeLevel, revLevel: st.rival.revLevel,
+        revengeDays: st.rival.revengeDays, bluffedThisWeek: st.rival.bluffedThisWeek,
+        lastDeptDay: st.rival.lastDeptDay,
+      },
+      hand: st.hand, alliance: st.alliance, history: st.history,
+      loyHistory: st.loyHistory, stalemate: st.stalemate,
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ version:1, meta: st.meta, campaign }));
+    localStorage.setItem(META_KEY, JSON.stringify({ version:1, meta: st.meta }));
+  } catch(e){}
+}
+function sanitizeLoy(o){
+  const out = freshLoyalty();
+  if (o && typeof o === 'object') for (const a of ARCH_IDS)
+    if (typeof o[a] === 'number') out[a] = Math.max(0, Math.min(100, o[a]));
+  return out;
+}
+function applyMeta(st, meta){
+  if (!meta || typeof meta !== 'object') return;
+  const m = st.meta;
+  if (Array.isArray(meta.wonWeeks)) m.wonWeeks = meta.wonWeeks.filter(x=>typeof x==='number');
+  if (Array.isArray(meta.crowns)) m.crowns = meta.crowns.filter(x=>typeof x==='number');
+  if (Array.isArray(meta.skins)) m.skins = meta.skins.filter(x=>DATA.skins.some(s=>s.id===x));
+  if (!m.skins.includes('rood')) m.skins.unshift('rood');
+  if (Array.isArray(meta.hats)) m.hats = meta.hats.filter(x=>DATA.hats.some(h=>h.id===x));
+  if (!m.hats.includes('geen')) m.hats.unshift('geen');
+  if (typeof meta.activeSkin === 'string' && m.skins.includes(meta.activeSkin)) m.activeSkin = meta.activeSkin;
+  if (typeof meta.activeHat === 'string' && m.hats.includes(meta.activeHat)) m.activeHat = meta.activeHat;
+  if (typeof meta.endlessBest === 'number') m.endlessBest = meta.endlessBest;
+  if (meta.settings && typeof meta.settings === 'object') m.settings = Object.assign(m.settings, meta.settings);
+}
+function loadGame(){
+  if (typeof localStorage === 'undefined') return null;
+  let raw = null;
+  try { raw = localStorage.getItem(SAVE_KEY); } catch(e){ return null; }
+  if (!raw) return null;
+  try {
+    const data = JSON.parse(raw);
+    if (!data || data.version !== 1 || !data.campaign) throw new Error('bad');
+    const c = data.campaign;
+    if (typeof c.week !== 'number' || typeof c.day !== 'number' ||
+        typeof c.coins !== 'number' || !(c.player && Array.isArray(c.player.departments)) ||
+        typeof c.marketShare !== 'number') throw new Error('shape');
+    const st = freshState();
+    applyMeta(st, data.meta);
+    st.endless = !!c.endless; st.endlessWeek = c.endlessWeek|0; st.diff = typeof c.diff==='number'?c.diff:1;
+    st.week = Math.max(1, Math.min(5, c.week|0));
+    st.day = Math.max(1, Math.min(7, c.day|0));
+    st.coins = Math.max(0, c.coins);
+    st.marketShare = Math.max(0, Math.min(1, c.marketShare));
+    const p = st.player, sp = c.player;
+    p.departments = sp.departments.filter(d => DATA.departments.some(x=>x.id===d));
+    if (!p.departments.length) p.departments = ['fruit'];
+    p.apeCount = Math.max(1, Math.min(3, (sp.apeCount|0)||1));
+    p.shelfLevel = Math.max(1, Math.min(3, (sp.shelfLevel|0)||1));
+    p.automations = Array.isArray(sp.automations) ? sp.automations.filter(d=>p.departments.includes(d)) : [];
+    p.hasCashierApe = !!sp.hasCashierApe; p.hasAutoKassa = !!sp.hasAutoKassa;
+    p.apeSpeedUps = Math.max(0, Math.min(3, sp.apeSpeedUps|0));
+    p.hasLoyaltyCard = !!sp.hasLoyaltyCard;
+    p.loyalty = sanitizeLoy(sp.loyalty);
+    p.upgrades = Array.isArray(sp.upgrades) ? sp.upgrades : [];
+    const r = st.rival, sr = c.rival || {};
+    r.id = DATA.rivals[sr.id] ? sr.id : (DATA.weeks[Math.min(st.week-1,4)].rival);
+    r.departments = Array.isArray(sr.departments) ? sr.departments.filter(d=>DATA.departments.some(x=>x.id===d)) : ['fruit'];
+    if (!r.departments.length) r.departments = ['fruit'];
+    r.efficiency = typeof sr.efficiency==='number' ? Math.max(0.5, Math.min(0.97, sr.efficiency)) : CONFIG.rivalEfficiency[st.week-1];
+    r.baseEfficiency = r.efficiency;
+    r.coins = Math.max(0, sr.coins||0);
+    r.loyalty = sanitizeLoy(sr.loyalty);
+    r.upgradeLevel = Math.max(0, sr.upgradeLevel|0);
+    r.revLevel = Math.max(0, sr.revLevel|0);
+    r.revengeDays = Math.max(0, Math.min(2, sr.revengeDays|0));
+    r.bluffedThisWeek = !!sr.bluffedThisWeek;
+    r.lastDeptDay = typeof sr.lastDeptDay==='number' ? sr.lastDeptDay : -99;   // fase5: cooldown-tracker
+    st.hand = Array.isArray(c.hand) ? c.hand.filter(h=>h&&sabData(h.id)).map(h=>({id:h.id,free:!!h.free})) : [];
+    st.alliance = (c.alliance && typeof c.alliance==='object') ? c.alliance : null;
+    st.history = Array.isArray(c.history) ? c.history : [];
+    st.loyHistory = Array.isArray(c.loyHistory) ? c.loyHistory : [];
+    st.stalemate = Math.max(0, c.stalemate|0);
+    return st;
+  } catch(e){
+    try {
+      const mraw = localStorage.getItem(META_KEY);
+      const m = JSON.parse(mraw);
+      try { localStorage.removeItem(SAVE_KEY); } catch(e2){}
+      if (m && m.version === 1 && m.meta){
+        const st = freshState(); applyMeta(st, m.meta); st.corruptRecovered = true; return st;
+      }
+    } catch(e3){}
+    try { localStorage.removeItem(SAVE_KEY); } catch(e4){}
+    return null;
+  }
+}
+function loadMeta(){
+  if (typeof localStorage === 'undefined') return null;
+  try { const m = JSON.parse(localStorage.getItem(META_KEY)); if (m && m.version===1) return m.meta; } catch(e){}
+  return null;
+}
+function hasSave(){ try { return typeof localStorage!=='undefined' && !!localStorage.getItem(SAVE_KEY); } catch(e){ return false; } }
+
+/* =====================================================================
+   FASE 6 — Achievements
+   Volledig additief. Eigen localStorage-key (mmr.achievements.v1). Raakt
+   CONFIG / balans / RNG / mmr.save.v1 / mmr.meta.v1 niet aan. Determinisme
+   blijft behouden: geen enkele achievement-check roept rng()/rand() aan.
+   ===================================================================== */
+const ACH_KEY = 'mmr.achievements.v1';
+const ACH_DEFS = [
+  { id:'firstDay',    icon:'🌅', name:'Eerste dag overleefd',      desc:'Rond dag 1 van een week af.',                    hint:'Speel dag 1 uit.' },
+  { id:'firstSab',    icon:'🍌', name:'Vuile trucjes',              desc:'Speel je eerste sabotage-kaart.',                hint:'Speel 1 sabotage in de avond.' },
+  { id:'alliance',    icon:'🤝', name:'Handjeklap',                 desc:'Sluit een alliantie met je rival.',              hint:'Accepteer een alliantie-aanbod.' },
+  { id:'firstWin',    icon:'🏆', name:'Week gewonnen',              desc:'Win je eerste week (≥50% op dag 7).',            hint:'Sluit een week af boven de 50%.' },
+  { id:'dominance',   icon:'📈', name:'Marktdominantie',            desc:'Sluit een week af met meer dan 60% marktaandeel.', hint:'Bereik >60% marktaandeel.' },
+  { id:'crown',       icon:'👑', name:'Straatkroon',                desc:'Win een week met ≥65% — gouden kroon.',          hint:'Domineer met ≥65%.' },
+  { id:'nicheWin',    icon:'🎯', name:'Nichekoning',                desc:'Versla de rival met een smalle winkel (≤2 afdelingen).', hint:'Win met max. 2 afdelingen.' },
+  { id:'sabWin',      icon:'🃏', name:'Saboteur-strateeg',          desc:'Win een week nadat je die week saboteerde.',     hint:'Win een week waarin je saboteerde.' },
+  { id:'season',      icon:'🌟', name:'Straatkoning',               desc:'Voltooi het volledige seizoen (5 weken).',       hint:'Win alle 5 de weken.' },
+  { id:'endless10',   icon:'♾️', name:'Onvermoeibaar',              desc:'Haal een endless-streak van 10 rondes.',         hint:'Overleef 10 endless-rondes.' },
+];
+const Ach = (function(){
+  let _got = {};
+  let _loaded = false;
+  const _queue = [];
+  let _wrap = null, _showing = false;
+
+  function _load(){
+    if (_loaded) return;
+    _loaded = true;
+    try {
+      const raw = localStorage.getItem(ACH_KEY);
+      if (raw){ const d = JSON.parse(raw); if (d && d.version===1 && d.got && typeof d.got==='object') _got = d.got; }
+    } catch(e){ _got = {}; }
+  }
+  function _persist(){
+    try { localStorage.setItem(ACH_KEY, JSON.stringify({ version:1, got:_got })); } catch(e){}
+  }
+  function has(id){ _load(); return !!_got[id]; }
+  function count(){ _load(); return ACH_DEFS.reduce((n,d)=>n+(_got[d.id]?1:0),0); }
+
+  function unlock(id){
+    _load();
+    if (_got[id]) return false;
+    const def = ACH_DEFS.find(d=>d.id===id); if (!def) return false;
+    _got[id] = { at: Date.now() };
+    _persist();
+    _queue.push(def);
+    _drain();
+    try { if (typeof sfx!=='undefined' && sfx.chaChing) sfx.chaChing(); } catch(e){}
+    return true;
+  }
+
+  function _drain(){
+    if (_showing) return;
+    const def = _queue.shift();
+    if (!def) return;
+    if (typeof document === 'undefined') return;
+    _wrap = _wrap || document.getElementById('achToastWrap');
+    if (!_wrap) return;
+    _showing = true;
+    const t = document.createElement('div');
+    t.className = 'achToast';
+    t.innerHTML = '<div class="tic">'+def.icon+'</div><div><div class="ttl">🏅 Prestatie ontgrendeld</div>'+
+                  '<div class="tnm">'+def.name+'</div></div>';
+    _wrap.appendChild(t);
+    // force reflow → animate in
+    void t.offsetWidth; t.classList.add('in');
+    setTimeout(()=>{
+      t.classList.remove('in');
+      setTimeout(()=>{ if (t.parentNode) t.parentNode.removeChild(t); _showing=false; _drain(); }, 480);
+    }, 2600);
+  }
+
+  // Evalueer alle "state-afgeleide" prestaties in één keer. Idempotent en
+  // side-effect-vrij op de game-state (schrijft alleen naar ACH_KEY).
+  function evaluate(st, ctx2){
+    if (!st) return;
+    ctx2 = ctx2 || {};
+    if (ctx2.dayDone) unlock('firstDay');
+    if (ctx2.sabotagePlayed) unlock('firstSab');
+    if (ctx2.allianceFormed) unlock('alliance');
+    const share = typeof st.marketShare==='number' ? st.marketShare : 0;
+    if (st.weekWon){
+      unlock('firstWin');
+      if (share > 0.60) unlock('dominance');
+      if (share >= 0.65) unlock('crown');
+      const depts = (st.player && st.player.departments) ? st.player.departments.length : 99;
+      if (depts <= 2) unlock('nicheWin');
+      if (st._sabotagedThisWeek) unlock('sabWin');
+      if (st.meta && [1,2,3,4,5].every(w=>st.meta.wonWeeks.includes(w))) unlock('season');
+      if (st.endless && st.endlessWeek >= 10) unlock('endless10');
+    }
+  }
+
+  return { has, count, unlock, evaluate, defs: ACH_DEFS };
+})();
+
+/* =========================== RENDER (Canvas) ========================= */
+let cv = null, ctx = null;
+function rr(x, y, w, h, r2){
+  ctx.beginPath();
+  ctx.moveTo(x + r2, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r2);
+  ctx.arcTo(x + w, y + h, x, y + h, r2);
+  ctx.arcTo(x, y + h, x, y, r2);
+  ctx.arcTo(x, y, x + w, y, r2);
+  ctx.closePath();
+}
+function activeSkin(st){ return DATA.skins.find(s=>s.id===st.meta.activeSkin) || DATA.skins[0]; }
+function activeHat(st){ return DATA.hats.find(h=>h.id===st.meta.activeHat) || DATA.hats[0]; }
+function render(st, fps){
+  if (!ctx) return;
+  const rivalDef = DATA.rivals[st.rival.id] || DATA.rivals.kiki;
+  const skin = activeSkin(st), hat = activeHat(st);
+  ctx.save();
+  if (Shake.frames > 0) ctx.translate(Shake.dx, Shake.dy); // Fase 4 shake
+  ctx.fillStyle = '#3a4a6b'; ctx.fillRect(0, 0, L.W, L.H);
+  ctx.fillStyle = '#565d70'; ctx.fillRect(0, L.floorY, L.W, L.H - L.floorY);
+  ctx.fillStyle = '#454a59'; ctx.fillRect(L.street.x, 90, L.street.w, L.floorY - 90);
+  ctx.fillStyle = '#666c7e';
+  for (let y = 110; y < L.floorY; y += 46) ctx.fillRect(L.street.x + L.street.w / 2 - 4, y, 8, 24);
+
+  /* --- jouw winkel (links) — skin-kleuren --- */
+  ctx.fillStyle = skin.floor; ctx.fillRect(L.shopL.x, 90, L.shopL.w, L.floorY - 90);
+  ctx.fillStyle = skin.awning; ctx.fillRect(L.shopL.x, 90, L.shopL.w, 46);
+  ctx.fillStyle = '#1c1f2a'; ctx.font = 'bold 20px Arial'; ctx.textAlign = 'center';
+  ctx.fillText('JOUW MART', L.shopL.x + L.shopL.w / 2, 121);
+  for (let i = 0; i < st.player.departments.length && i < 6; i++){
+    const d = st.player.departments[i]; const slot = L.shelfSlots[i];
+    const sh = st.player.shelves[d]; const info = deptInfo(d);
+    const cap = CONFIG.shelfCapacity[sh.level - 1];
+    ctx.fillStyle = '#7a6248'; rr(slot.x, slot.y, L.shelfW, L.shelfH, 6); ctx.fill();
+    const frac = sh.stock / cap;
+    ctx.fillStyle = sh.stock === 0 ? '#b33939' : info.color;
+    ctx.fillRect(slot.x + 6, slot.y + L.shelfH - 14 - frac * (L.shelfH - 24), L.shelfW - 12, frac * (L.shelfH - 24) + 6);
+    ctx.fillStyle = '#fff'; ctx.font = '16px Arial';
+    ctx.fillText(info.icon, slot.x + L.shelfW / 2, slot.y + 18);
+    ctx.font = 'bold 12px Arial';
+    ctx.fillText(sh.stock + '/' + cap, slot.x + L.shelfW / 2, slot.y + L.shelfH + 14);
+    if (sh.pinned){ ctx.fillStyle = '#ffd23f'; ctx.font = '15px Arial'; ctx.fillText('📌', slot.x + L.shelfW - 10, slot.y + 4); }
+    if (st.player.automations.includes(d)){ ctx.font = '12px Arial'; ctx.fillText('⚙️', slot.x + 10, slot.y + 4); }
+  }
+  for (let i = st.player.departments.length; i < 6; i++){
+    const slot = L.shelfSlots[i];
+    ctx.strokeStyle = '#5a4632'; ctx.lineWidth = 2; ctx.setLineDash([5, 5]);
+    rr(slot.x, slot.y, L.shelfW, L.shelfH, 6); ctx.stroke(); ctx.setLineDash([]);
+  }
+  ctx.fillStyle = '#8d6b43'; rr(L.crate.x, L.crate.y, L.crate.w, L.crate.h, 5); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = '11px Arial';
+  let whTotal = 0; if (st.warehouse) for (const d of st.player.departments) whTotal += (st.warehouse[d]?st.warehouse[d].stock:0);
+  ctx.fillText('MAGAZIJN', L.crate.x + L.crate.w / 2, L.crate.y + 20);
+  ctx.font = 'bold 14px Arial'; ctx.fillText(String(whTotal), L.crate.x + L.crate.w / 2, L.crate.y + 38);
+  ctx.fillStyle = '#3f7d4e'; rr(L.register.x, L.register.y, L.register.w, L.register.h, 5); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = '11px Arial'; ctx.fillText('KASSA', L.register.x + L.register.w / 2, L.register.y + 22);
+  ctx.font = '15px Arial';
+  ctx.fillText(st.player.hasAutoKassa ? '🤖' : (st.player.hasCashierApe ? '🐵💨' : '🛎️'), L.register.x + L.register.w / 2, L.register.y + 42);
+
+  /* --- rival-winkel (rechts) — kleur per rival --- */
+  ctx.fillStyle = '#2f3d5c'; ctx.fillRect(L.shopR.x, 90, L.shopR.w, L.floorY - 90);
+  ctx.fillStyle = rivalDef.barColor; ctx.fillRect(L.shopR.x, 90, L.shopR.w, 46);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 19px Arial';
+  ctx.fillText(rivalDef.name.toUpperCase() + ' ' + rivalDef.face, L.shopR.x + L.shopR.w / 2, 120);
+  for (let i = 0; i < 6; i++){
+    const slot = L.rivalShelves[i]; const d = st.rival.departments[i];
+    if (d){
+      const frac = st.rival.shelves[d] != null ? st.rival.shelves[d] : 1;
+      ctx.fillStyle = '#41547e'; rr(slot.x, slot.y, L.shelfW, L.shelfH, 6); ctx.fill();
+      ctx.fillStyle = frac < 0.15 ? '#b33939' : '#7fa7f0';
+      ctx.fillRect(slot.x + 6, slot.y + L.shelfH - 12 - frac * (L.shelfH - 22), L.shelfW - 12, frac * (L.shelfH - 22) + 6);
+      ctx.fillStyle = '#fff'; ctx.font = '15px Arial'; ctx.fillText(deptInfo(d).icon, slot.x + L.shelfW / 2, slot.y + 16);
+      if (frac < 0.15){ ctx.font = 'bold 11px Arial'; ctx.fillText('LEEG', slot.x + L.shelfW / 2, slot.y + L.shelfH + 13); }
+    } else {
+      ctx.strokeStyle = '#3a4a6e'; ctx.lineWidth = 2; ctx.setLineDash([5, 5]);
+      rr(slot.x, slot.y, L.shelfW, L.shelfH, 6); ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
+
+  /* --- deuren --- */
+  ctx.fillStyle = '#2a2e3c';
+  ctx.fillRect(L.doorL.x - 14, L.floorY - 78, 22, 78);
+  ctx.fillRect(L.doorR.x - 8, L.floorY - 78, 22, 78);
+
+  /* --- bananenschil op rival-stoep (sabotage visueel) --- */
+  if (st.screen === 'day' && st.activeSabotage.banana){
+    ctx.font = '22px Arial'; ctx.textAlign='center';
+    ctx.fillText('🍌', L.doorR.x - 24, L.bananaY);
+  }
+
+  /* --- apen + hoedje --- */
+  for (const ape of st.player.apes){
+    ctx.fillStyle = '#a0673f';
+    ctx.beginPath(); ctx.arc(ape.x, L.floorY - 26, 14, 0, 7); ctx.fill();
+    ctx.fillStyle = '#1c1f2a'; ctx.font = '16px Arial'; ctx.fillText('🐵', ape.x, L.floorY - 20);
+    if (hat && hat.icon){ ctx.font='13px Arial'; ctx.fillText(hat.icon, ape.x, L.floorY - 40); }
+    if (ape.carry > 0){ ctx.font = '11px Arial'; ctx.fillText('📦×' + ape.carry, ape.x, L.floorY - 52); }
+  }
+
+  /* --- klanten met archetype-prop --- */
+  for (const c of st.customers){
+    if (!c.active) continue;
+    const yoff = c.slipping ? -8 + Math.sin(c.slipT*20)*6 : 0;
+    ctx.fillStyle = c.color;
+    ctx.beginPath(); ctx.arc(c.x, c.y - 18 + yoff, 11, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#1c1f2a'; ctx.lineWidth = 2; ctx.stroke();
+    const ai = archInfo(c.arch);
+    ctx.font = '11px Arial'; ctx.fillText(ai.icon, c.x, c.y - 4 + yoff);
+    if (c.slipping){ ctx.font='14px Arial'; ctx.fillText('💫', c.x+12, c.y-32); }
+    else if (c.angry){ ctx.font = '13px Arial'; ctx.fillText('💢', c.x + 10, c.y - 32); }
+    else if (c.phase === 'waitShelf'){ ctx.font = '12px Arial'; ctx.fillText('⏳', c.x, c.y - 36); }
+    else if (c.carrying > 0){ ctx.font = '11px Arial'; ctx.fillText('🛒', c.x, c.y - 36); }
+  }
+
+  /* --- topbar: marktaandeel --- */
+  ctx.fillStyle = '#1c1f2a'; ctx.fillRect(0, 0, L.W, L.topBarH);
+  const barX = 220, barW = 460, barY = 14, barH = 26;
+  // Fase 4: tijdens de dag-sim gebruikt de balk de geëasede waarde + tick-pulse;
+  // daarbuiten (rapport e.d.) de directe waarde zodat andere schermen ongemoeid blijven.
+  const barShare = st.screen === 'day' ? ShareAnim.current : st.marketShare;
+  ctx.fillStyle = rivalDef.barColor; rr(barX, barY, barW, barH, 13); ctx.fill();
+  ctx.save(); rr(barX, barY, barW, barH, 13); ctx.clip();
+  ctx.fillStyle = skin.awning; ctx.fillRect(barX, barY, barW * barShare, barH);
+  ctx.restore();
+  if (ShareAnim.pulse > 0 && st.screen === 'day'){
+    ctx.save(); ctx.globalAlpha = ShareAnim.pulse / 0.18 * 0.55;
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; rr(barX-2, barY-2, barW+4, barH+4, 15); ctx.stroke();
+    ctx.restore();
+  }
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(barX + barW / 2, barY - 3); ctx.lineTo(barX + barW / 2, barY + barH + 3); ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 14px Arial'; ctx.textAlign='center';
+  ctx.fillText(Math.round(barShare * 100) + '%', barX + barW / 2, barY + 18);
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#ffd97d'; ctx.font = 'bold 15px Arial';
+  const wkLbl = st.endless ? ('Endless ' + (st.endlessWeek+1)) : ('Week ' + st.week);
+  ctx.fillText(wkLbl + ' · Dag ' + st.day + '/7', 12, 24);
+  // Fase 4: schaal-bounce op de coin-teller wanneer een coin-arc inslaat.
+  if (coinTellerPop > 0){
+    const cs = 1 + (coinTellerPop / 0.15) * 0.35;
+    ctx.save();
+    ctx.translate(COIN_TARGET.x, COIN_TARGET.y);
+    ctx.scale(cs, cs);
+    ctx.translate(-COIN_TARGET.x, -COIN_TARGET.y);
+    ctx.fillStyle = '#fff'; ctx.fillText('🪙 ' + Math.round(st.coins), 12, 46);
+    ctx.restore();
+  } else {
+    ctx.fillStyle = '#ffe28a'; ctx.fillText('🪙 ' + Math.round(st.coins), 12, 46);
+  }
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#cfd6e8'; ctx.font = '13px Arial';
+  const tLeft = Math.max(0, CONFIG.dayLengthSec - st.dayTimer);
+  ctx.fillText('⏱ ' + Math.ceil(tLeft) + 's', L.W - 12, 24);
+  ctx.fillText('Vandaag: jij ' + Math.round(st.dailyRevenue.player) + ' · ' + rivalDef.name + ' ' + Math.round(st.dailyRevenue.rival), L.W - 12, 46);
+  ctx.textAlign = 'center';
+
+  /* --- alliantie-banner --- */
+  if (st.alliance && st.screen === 'day'){
+    ctx.fillStyle = 'rgba(126,200,160,0.85)'; rr(330, 62, 240, 24, 10); ctx.fill();
+    ctx.fillStyle = '#143'; ctx.font = 'bold 13px Arial';
+    const an = st.alliance.type === 'levering' ? '🤝 Gedeelde levering' : '🤝 Marktverdeling';
+    ctx.fillText(an + ' (' + st.alliance.daysLeft + 'd)', 450, 79);
+  }
+
+  if (DEBUG && debugHud){
+    let n = 0; for (const c of st.customers) if (c.active) n++;
+    let util = '';
+    if (st._utilDbg) for (const k in st._utilDbg) util += '\n  ' + k + ' ' + st._utilDbg[k];
+    debugHud.textContent =
+      'fps ' + fps + '\nklanten ' + n + '/' + CONFIG.maxCustomers + '\napen ' + st.player.apes.length +
+      '\nseed ' + SEED + '\nspeed ×' + simSpeed + '\nshare ' + (st.marketShare * 100).toFixed(1) + '%' +
+      '\nrival ' + st.rival.id + ' eff ' + st.rival.efficiency.toFixed(3) +
+      '\ndiff ' + st.diff.toFixed(2) +
+      '\nutility:' + util;
+  }
+  // Fase 4: dag/nacht tint, coin arcs, confetti, shake-restore
+  if (st.screen === 'day') DayNightAnim.drawOverlay(ctx);
+  drawCoinArcs(ctx);
+  drawConfetti(ctx);
+  ctx.restore(); // sluit Fase 4 shake save
+}
+/* =========================== DOM-UI sync ============================= */
+let ovTitle, ovSeason, ovSkins, ovWeekIntro, ovEvening, ovRival, ovReport, ovWeekEnd, ovAch;
+let debugHud, pauseHint, speedBtn, tipEl;
+function $(id){ return document.getElementById(id); }
+function el(tag, cls, txt){ const e=document.createElement(tag); if(cls)e.className=cls; if(txt!=null)e.textContent=txt; return e; }
+
+function syncOverlays(st){
+  if (typeof document === 'undefined') return;
+  ovTitle.classList.toggle('show', st.screen === 'title');
+  ovSeason.classList.toggle('show', st.screen === 'season');
+  ovSkins.classList.toggle('show', st.screen === 'skins');
+  if (ovAch) ovAch.classList.toggle('show', st.screen === 'ach');
+  ovWeekIntro.classList.toggle('show', st.screen === 'weekIntro');
+  ovEvening.classList.toggle('show', st.screen === 'evening');
+  ovRival.classList.toggle('show', st.screen === 'rivalMove');
+  ovReport.classList.toggle('show', st.screen === 'report');
+  ovWeekEnd.classList.toggle('show', st.screen === 'weekResult');
+
+  if (st.screen === 'title') buildTitle(st);
+  if (st.screen === 'season') buildSeason(st);
+  if (st.screen === 'skins') buildSkins(st);
+  if (st.screen === 'ach') buildAch(st);
+  if (st.screen === 'weekIntro') buildWeekIntro(st);
+  if (st.screen === 'evening') buildEveningUI(st);
+  if (st.screen === 'rivalMove'){
+    const _rv = DATA.rivals[st.rival.id]||DATA.rivals.kiki;
+    $('rivalFace').textContent = _rv.face;
+    TypeWriter.start(st.rivalLine || '...', _rv.id, $('rivalText')); // Fase 4 typewriter
+  }
+  if (st.screen === 'report') buildReport(st);
+  if (st.screen === 'weekResult') buildWeekResult(st);
+  // tutorial tooltips alleen op de dag-screen (week 1)
+  if (st.screen !== 'day') hideTip();
+}
+
+function buildTitle(st){
+  const tb = $('titleBtns'); tb.innerHTML='';
+  const saved = hasSave();
+  // Primaire actie: Ga verder als er een save is, anders Speel.
+  if (saved){
+    const cont = el('button','btn blue big','▶ Ga verder'); cont.onclick = resumeGame; tb.appendChild(cont);
+    const nw = el('button','btn','🆕 Nieuw seizoen'); nw.onclick = ()=>{ goSeason(); }; tb.appendChild(nw);
+  } else {
+    const play = el('button','btn big','▶ Speel'); play.onclick = ()=>{ goSeason(); }; tb.appendChild(play);
+  }
+  // Secundaire acties
+  const foot = el('div','titleFoot');
+  const sk = el('button','btn grey small','🎨 Skins'); sk.onclick = ()=>{ state.screen='skins'; syncOverlays(state); }; foot.appendChild(sk);
+  const ac = el('button','btn grey small','🏅 Prestaties ('+(typeof Ach!=='undefined'?Ach.count():0)+'/'+ACH_DEFS.length+')');
+  ac.onclick = ()=>{ state.screen='ach'; syncOverlays(state); }; foot.appendChild(ac);
+  tb.appendChild(foot);
+  if (st.corruptRecovered){ const p=el('p',null,'Je oude save was beschadigd — er is netjes opnieuw gestart.'); p.style.cssText='color:#ff9c9c;font-size:13px;'; tb.appendChild(p); }
+}
+function buildAch(st){
+  const cnt = $('achCount'); if (cnt) cnt.textContent = '('+Ach.count()+'/'+ACH_DEFS.length+')';
+  const g = $('achGrid'); if (!g) return; g.innerHTML='';
+  for (const d of ACH_DEFS){
+    const got = Ach.has(d.id);
+    const t = el('div','achTile'+(got?' got':''));
+    t.appendChild(el('div','aic', got?d.icon:'🔒'));
+    const tx = el('div','atx');
+    tx.appendChild(el('div','an', d.name));
+    tx.appendChild(el('div','ad', d.desc));
+    if (!got) tx.appendChild(el('div','alk','🔒 '+d.hint));
+    t.appendChild(tx);
+    g.appendChild(t);
+  }
+}
+
+function goSeason(){
+  // zorg dat state.meta de laatste unlocks heeft
+  if (!state) { state = freshState(); attachPools(state); }
+  const m = loadMeta(); if (m) applyMeta(state, m);
+  state.screen = 'season'; syncOverlays(state);
+}
+function buildSeason(st){
+  const m = st.meta;
+  const seasonDone = [1,2,3,4,5].every(w=>m.wonWeeks.includes(w));
+  $('seasonSub').innerHTML = seasonDone
+    ? 'Seizoen voltooid! 👑 Speel <b>Endless</b> voor je hoogste streak (best: '+m.endlessBest+').'
+    : 'Versla alle 5 weken om Straatkoning te worden. Kroon = win met ≥65%.';
+  const g = $('seasonGrid'); g.innerHTML='';
+  for (const wd of DATA.weeks){
+    const won = m.wonWeeks.includes(wd.wk);
+    const crown = m.crowns.includes(wd.wk);
+    // unlocked als week 1, of vorige week gewonnen
+    const unlocked = wd.wk === 1 || m.wonWeeks.includes(wd.wk-1);
+    const t = el('div','weekTile' + (won?' won':'') + (unlocked?'':' locked'));
+    const rv = DATA.rivals[wd.rival];
+    t.appendChild(el('div','wkn','Week '+wd.wk));
+    t.appendChild(el('div','wkr', rv.face+' '+rv.name));
+    t.appendChild(el('div','wkc', crown?'👑':(won?'✅':(unlocked?'▶':'🔒'))));
+    if (unlocked) t.onclick = ()=>{ startWeek(state, wd.wk); };
+    g.appendChild(t);
+  }
+  const sb = $('seasonBtns'); sb.innerHTML='';
+  if (seasonDone){ const e=el('button','btn','♾️ Start Endless'); e.onclick=()=>{ state.endlessWeek=0; startEndlessWeek(state); }; sb.appendChild(e); }
+  const back = el('button','btn grey','◀ Titel'); back.onclick=()=>{ state.screen='title'; syncOverlays(state); }; sb.appendChild(back);
+}
+
+function buildSkins(st){
+  const m = st.meta;
+  const sg = $('skinGrid'); sg.innerHTML='';
+  for (const sk of DATA.skins){
+    const owned = m.skins.includes(sk.id);
+    const t = el('div','skinTile' + (owned?'':' locked') + (m.activeSkin===sk.id?' active':''));
+    const sw = el('div','skinSwatch'); sw.style.background = sk.awning; sw.style.borderBottom='8px solid '+sk.floor; t.appendChild(sw);
+    t.appendChild(el('div','skn', sk.name + (owned?'':' 🔒')));
+    if (owned) t.onclick=()=>{ m.activeSkin=sk.id; saveMetaOnly(m); buildSkins(st); };
+    sg.appendChild(t);
+  }
+  const hg = $('hatGrid'); hg.innerHTML='';
+  for (const ht of DATA.hats){
+    const owned = m.hats.includes(ht.id);
+    const t = el('div','skinTile' + (owned?'':' locked') + (m.activeHat===ht.id?' active':''));
+    t.appendChild(el('div',null, ht.icon||'—')); t.lastChild.style.cssText='font-size:30px;height:38px;';
+    t.appendChild(el('div','skn', ht.name + (owned?'':' 🔒')));
+    if (owned) t.onclick=()=>{ m.activeHat=ht.id; saveMetaOnly(m); buildSkins(st); };
+    hg.appendChild(t);
+  }
+}
+
+function buildWeekIntro(st){
+  const rv = DATA.rivals[st.rival.id] || DATA.rivals.kiki;
+  $('introFace').textContent = rv.face;
+  const wd = DATA.weeks[Math.min(st.week-1,4)];
+  let txt = rv.introLine;
+  if (st.endless) txt = rv.face+' '+rv.name+': "Endless ronde '+(st.endlessWeek+1)+'! De straat wordt zwaarder, vriend."';
+  else if (wd && wd.note) txt = rv.introLine;
+  // Fase 4: typewriter + avond-muziek bij intro
+  TypeWriter.start(txt, rv.id, $('introText'));
+  if (!AudioEngine.muted){
+    AudioEngine.ensureCtx();
+    if (!AudioEngine.started) AudioEngine.startMusic('avond');
+    else AudioEngine.crossfade('avond');
+  }
+}
+
+function buildEveningUI(st){
+  $('eveTitle').textContent = '🌙 Avond na dag ' + st.day + ' — kies je zet';
+  $('eveCoins').innerHTML = 'Je hebt <b style="color:#ffe28a">🪙 ' + Math.round(st.coins) + '</b>';
+  const cardsEl = $('cards'); cardsEl.innerHTML='';
+  for (const card of st.eveningCards){
+    const tpl = DATA.upgradePool.find(u=>u.id===card.id);
+    const div = document.createElement('div');
+    const afford = st.coins >= card.cost;
+    div.className = 'card' + (afford?'':' unaffordable');
+    let nm = tpl.name, ds = tpl.desc;
+    if (card.id==='dept' && card.payload) nm = deptInfo(card.payload).name + '-afdeling';
+    if (card.id==='automation' && card.payload) ds = 'Lopende band voor '+deptInfo(card.payload).name+' — vult zichzelf.';
+    if (card.id==='shelfLvl') nm = 'Schap-niveau ' + (st.player.shelfLevel+1);
+    div.innerHTML = '<div class="cicon">'+(card.id==='dept'&&card.payload?deptInfo(card.payload).icon:tpl.icon)+'</div>'+
+      '<div class="cname">'+nm+'</div><div class="cdesc">'+ds+'</div><div class="ccost">🪙 '+card.cost+'</div>';
+    if (afford) div.onclick = ()=>{ sfx.klik(); if (applyUpgrade(state, card)) { afterEveningChoice(); } };
+    cardsEl.appendChild(div);
+  }
+  // sabotage-hand
+  const hr = $('handRow'); hr.innerHTML='';
+  $('eveSab').style.display = (st.hand.length || st.week>=2 || st.endless) ? 'block' : 'none';
+  st.hand.forEach((h, i)=>{
+    const s = sabData(h.id); const cost = h.free?0:sabCost(h.id);
+    const afford = st.coins >= cost && !st._sabUsedTonight;
+    const div = document.createElement('div');
+    div.className = 'sabcard' + (afford?'':' unaffordable');
+    div.innerHTML = '<div class="sicon">'+s.icon+'</div><div class="sname">'+s.name+(h.free?' 🎁':'')+'</div>'+
+      '<div class="sdesc">'+s.desc+'</div><div class="scost">🪙 '+cost+'</div>';
+    if (afford) div.onclick = ()=>{ sfx.klik(); if (playerPlaySabotage(state, i)) buildEveningUI(state); };
+    hr.appendChild(div);
+  });
+  if (!st.hand.length && (st.week>=2||st.endless)){ hr.appendChild(el('p',null,'(Geen sabotagekaarten meer deze week)')); hr.lastChild.style.cssText='font-size:12px;color:#9aa;'; }
+  // alliantie
+  const al = $('eveAlliance'); al.innerHTML='';
+  if (st.alliance){
+    const p = el('p',null,'🤝 Actief: '+(st.alliance.type==='levering'?'Gedeelde levering':'Marktverdeling')+' ('+st.alliance.daysLeft+' dagen). ');
+    p.style.color='#7ed6a5'; al.appendChild(p);
+    const brk = el('button','btn red small','💔 Verbreek (−20 loyalty + wraak)');
+    brk.onclick = ()=>{ breakAlliance(state); buildEveningUI(state); }; al.appendChild(brk);
+  } else if (st.allianceOffer){
+    const who = st.allianceOffer.from==='rival' ? (DATA.rivals[st.rival.id].name+' biedt een alliantie aan!') : 'Stel een alliantie voor:';
+    const p = el('p',null,'🤝 '+who); p.style.color='#7ed6a5'; al.appendChild(p);
+    const b1 = el('button','btn small','Gedeelde levering'); b1.onclick=()=>{ startAlliance(state,'levering'); buildEveningUI(state); }; al.appendChild(b1);
+    const b2 = el('button','btn small','Marktverdeling (claim Gezin+Senior)');
+    b2.onclick=()=>{ startAlliance(state,'marktverdeling',['gezin','senior']); buildEveningUI(state); }; al.appendChild(b2);
+  }
+  // tutorial: eerste-upgrade-tip al getoond via dag; hier niets
+}
+function afterEveningChoice(){ rivalMove(state); }
+
+function buildReport(st){
+  const rv = DATA.rivals[st.rival.id] || DATA.rivals.kiki;
+  $('repTitle').textContent = '📊 Dagrapport — dag ' + st.day;
+  $('repRivName').textContent = rv.name;
+  $('repYou').textContent = Math.round(st.dailyRevenue.player) + ' 🪙';
+  $('repRiv').textContent = Math.round(st.dailyRevenue.rival) + ' 🪙';
+  $('repServed').textContent = st.dayStats.served + ' (geled: '+st.dayStats.rescued+') · '+rv.name+': ' + st.dayStats.rivalServed;
+  $('repAngry').textContent = st.dayStats.angry + ' · '+rv.name+': ' + st.dayStats.rivalAngry;
+  const lr = $('loyRow'); lr.innerHTML='';
+  for (const a of ARCH_IDS){
+    const ai = archInfo(a);
+    const box = el('div','loyArch'); box.innerHTML = ai.icon+' '+ai.name;
+    const bg = el('div','loyBarBg'); const fill = el('div','loyBarYou'); fill.style.width = st.player.loyalty[a]+'%';
+    bg.appendChild(fill); box.appendChild(bg); lr.appendChild(box);
+  }
+  const fill = $('repShareFill'), lbl = $('repShareLbl');
+  fill.style.transition='none'; fill.style.width=(st.prevShare*100)+'%'; lbl.textContent=Math.round(st.prevShare*100)+'%';
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    fill.style.transition=''; fill.style.width=(st.marketShare*100)+'%'; lbl.textContent=Math.round(st.marketShare*100)+'%';
+  }));
+}
+
+/* Fase 6: deel-resultaat — navigator.share met clipboard/alert-fallback */
+function shareResult(st){
+  const pct = Math.round((st.marketShare||0)*100);
+  const won = st.weekWon;
+  const wk = st.endless ? ('endless-ronde '+st.endlessWeek) : ('week '+st.week);
+  const verb = won ? 'won' : 'haalde';
+  let txt = 'Ik '+verb+' '+pct+'% marktaandeel in '+wk+' van Monkey Mart Rivals';
+  if (won && pct>=65) txt += ' 👑';
+  txt += ' op Mebbols.com! 🐵';
+  const url = (typeof location!=='undefined' && location.href) ? location.href.split('?')[0] : 'https://mebbols.com';
+  const full = txt + ' ' + url;
+  const feedback = (msg)=>{
+    const b = $('btnShare'); if (!b) return;
+    const old = b.textContent; b.textContent = msg;
+    setTimeout(()=>{ if (b) b.textContent = old; }, 1800);
+  };
+  try {
+    if (typeof navigator!=='undefined' && navigator.share){
+      navigator.share({ title:'Monkey Mart Rivals', text:txt, url:url })
+        .then(()=>feedback('✔ Gedeeld!'))
+        .catch(()=>copyShare(full, feedback));
+      return;
+    }
+  } catch(e){}
+  copyShare(full, feedback);
+}
+function copyShare(full, feedback){
+  try {
+    if (typeof navigator!=='undefined' && navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(full)
+        .then(()=>feedback('✔ Gekopieerd!'))
+        .catch(()=>{ try{ alert(full); }catch(e){} feedback('📋 Kopieer & deel'); });
+      return;
+    }
+  } catch(e){}
+  try { alert(full); } catch(e){}
+  feedback('📋 Kopieer & deel');
+}
+
+function buildWeekResult(st){
+  const won = st.weekWon;
+  const rv = DATA.rivals[st.rival.id] || DATA.rivals.kiki;
+  const seasonDone = [1,2,3,4,5].every(w=>st.meta.wonWeeks.includes(w));
+  $('weTitle').textContent = won ? (st.marketShare>=0.65?'👑 DOMINANTIE!':'🏆 WEEK GEWONNEN!') : '😿 Week verloren…';
+  let txt;
+  if (won){
+    txt = 'Je sloot af met <b>'+Math.round(st.marketShare*100)+'%</b> marktaandeel.';
+    if (st.marketShare>=0.65) txt += ' Gouden kroon verdiend! 👑';
+  } else {
+    txt = 'Je eindigde op <b>'+Math.round(st.marketShare*100)+'%</b> — '+rv.name+' pakte de straat.<br>'+
+          '<span class="warn">'+lossAnalysis(st)+'</span><br>'+
+          'Retry met <b>+'+Math.round(CONFIG.retryBonusPct*100)+'% coins-bonus</b> (🪙 '+Math.round(st.coins*CONFIG.retryBonusPct)+').';
+  }
+  $('weText').innerHTML = txt;
+  $('weShareFill').style.width=(st.marketShare*100)+'%';
+  $('weShareLbl').textContent=Math.round(st.marketShare*100)+'%';
+  const ex = $('weExtra'); ex.innerHTML='';
+  if (won && !st.endless){
+    const newSkins = DATA.skins.filter(s=>s.req && s.req.week===st.week && st.meta.skins.includes(s.id));
+    if (newSkins.length){ ex.appendChild(el('p',null,'🎨 Skin ontgrendeld: '+newSkins.map(s=>s.name).join(', '))); ex.lastChild.style.color='#ffd97d'; }
+    if (st.marketShare>=0.65){ ex.appendChild(el('p',null,'👑 Kroon #'+st.meta.crowns.length+' verdiend!')); ex.lastChild.style.color='#ffd23f'; }
+    if (seasonDone){ ex.appendChild(el('p',null,'🎉 SEIZOEN VOLTOOID — je bent de Straatkoning! Endless ontgrendeld.')); ex.lastChild.style.color='#7ed6a5'; }
+  }
+  if (st.endless){ ex.appendChild(el('p',null,'♾️ Endless streak: '+st.endlessWeek+' (best: '+st.meta.endlessBest+')')); ex.lastChild.style.color='#9aa9ff'; }
+  const wb = $('weBtns'); wb.innerHTML='';
+  if (won){
+    if (st.endless){ const n=el('button','btn','♾️ Volgende endless-ronde'); n.onclick=()=>{ startEndlessWeek(state); }; wb.appendChild(n); }
+    else if (seasonDone){ const e=el('button','btn','♾️ Start Endless'); e.onclick=()=>{ state.endlessWeek=0; startEndlessWeek(state); }; wb.appendChild(e); }
+    else if (st.week < 5){ const n=el('button','btn','▶ Week '+(st.week+1)); n.onclick=()=>{ startWeek(state, st.week+1); }; wb.appendChild(n); }
+  } else {
+    const rt = el('button','btn blue','🔁 Retry met bonus'); rt.onclick=()=>{ retryWeek(state); }; wb.appendChild(rt);
+  }
+  const share = el('button','btn blue','📣 Deel je resultaat'); share.id='btnShare';
+  share.onclick=()=>{ shareResult(st); }; wb.appendChild(share);
+  const mapb = el('button','btn grey','🗺️ Seizoenskaart'); mapb.onclick=()=>{ goSeason(); }; wb.appendChild(mapb);
+}
+
+/* =========================== TUTORIAL TOOLTIPS ====================== */
+const tipState = { shown:{}, current:null };
+function showTip(key, x, y){
+  if (state.week !== 1 || state.endless) return;
+  if (tipState.shown[key]) return;
+  tipState.shown[key] = true;
+  const t = DATA.tips[key]; if (!t || !tipEl) return;
+  tipEl.innerHTML = t.txt + '<br><button class="tipbtn">Oké!</button>';
+  tipEl.style.left = Math.max(8, Math.min(L.W-270, x)) + 'px';
+  tipEl.style.top = Math.max(64, Math.min(L.H-120, y)) + 'px';
+  tipEl.style.display = 'block';
+  tipEl.querySelector('.tipbtn').onclick = hideTip;
+  tipState.current = key;
+}
+function hideTip(){ if (tipEl){ tipEl.style.display='none'; } tipState.current=null; }
+function checkTips(st){
+  if (st.week !== 1 || st.endless || st.screen!=='day') return;
+  // eerste klant
+  if (!tipState.shown.firstCustomer){ for (const c of st.customers) if (c.active){ showTip('firstCustomer', 120, 120); break; } }
+  // eerste leeg schap (klant wacht)
+  if (!tipState.shown.emptyShelf){ for (const c of st.customers) if (c.active && c.phase==='waitShelf'){ showTip('emptyShelf', 60, 280); break; } }
+  // eerste sabotage beschikbaar (gratis schil dag 3)
+  if (!tipState.shown.firstSabotage && st.day===3 && st.hand.some(h=>h.id==='banana')){ showTip('firstSabotage', 200, 200); }
+}
+/* =========================== INPUT (Pointer Events) ================== */
+function onPointer(ev){
+  if (!state) return;
+  if (paused){ paused = false; pauseHint.style.display='none'; return; }
+  if (state.screen !== 'day') return;
+  const rect = cv.getBoundingClientRect();
+  const x = (ev.clientX - rect.left) * (L.W / rect.width);
+  const y = (ev.clientY - rect.top) * (L.H / rect.height);
+  for (let i = 0; i < state.player.departments.length && i < 6; i++){
+    const slot = L.shelfSlots[i];
+    if (x >= slot.x-6 && x <= slot.x+L.shelfW+6 && y >= slot.y-6 && y <= slot.y+L.shelfH+18){
+      const d = state.player.departments[i]; const sh = state.player.shelves[d];
+      sh.pinned = !sh.pinned;
+      sfx.schapTik(); // Fase 4 audio
+      if (sh.pinned) for (const dd of state.player.departments) if (dd!==d) state.player.shelves[dd].pinned=false;
+      return;
+    }
+  }
+}
+
+/* =========================== MAIN LOOP =============================== */
+const STEP = 1/60;
+let acc = 0, lastT = 0, simSpeed = 1, paused = false;
+let fpsCount = 0, fpsTime = 0, fpsShown = 0;
+const customerPool = makeCustomerPool(CONFIG.maxCustomers);
+function attachPools(st){
+  st.customers = customerPool;
+  for (const c of customerPool) c.active = false;
+  st.warehouse = {};
+  initShelves(st.player); initRivalShelves(st.rival);
+}
+function frame(t){
+  requestAnimationFrame(frame);
+  if (!lastT) lastT = t;
+  let dtMs = t - lastT; lastT = t;
+  if (dtMs > 250) dtMs = 250;
+  fpsCount++; fpsTime += dtMs;
+  if (fpsTime >= 500){ fpsShown = Math.round(fpsCount*1000/fpsTime); fpsCount=0; fpsTime=0; }
+  const _dt = dtMs / 1000;
+  if (!paused && state && state.screen === 'day'){
+    acc += _dt * simSpeed;
+    let guard = 0;
+    while (acc >= STEP && guard < 30){
+      updateDay(STEP, state); acc -= STEP; guard++;
+      if (state.screen !== 'day'){ acc = 0; break; }
+    }
+    checkTips(state);
+    ShareAnim.target = state.marketShare;
+    ShareAnim.update(_dt * simSpeed);
+  }
+  updateCoinArcs(dtMs);           // Fase 4 coin arcs
+  updateConfetti(_dt);            // Fase 4 confetti
+  TypeWriter.update(_dt);         // Fase 4 typewriter
+  DayNightAnim.update(_dt);       // Fase 4 dag/nacht
+  Shake.tick();                   // Fase 4 shake
+  if (state) render(state, fpsShown);
+}
+
+/* =========================== NEW / RESUME ============================ */
+function startNewGame(){
+  const meta = state ? state.meta : (loadMeta() || null);
+  try { localStorage.removeItem(SAVE_KEY); } catch(e){}
+  state = freshState();
+  if (meta) applyMeta(state, meta);
+  startWeek(state, 1);
+}
+function resumeGame(){
+  const loaded = loadGame();
+  if (loaded){ state = loaded; attachPools(state); startDay(state); saveGame(state); }
+  else startNewGame();
+}
+
+/* =========================== HEADLESS SELFTEST ======================= */
+function simulateWeek(seed, strategy, week, opts){
+  opts = opts || {};
+  rng = mulberry32(seed);
+  const st = freshState();
+  st.week = week || 1;
+  st.rival = freshRival(st.week);
+  st.diff = opts.diff || 1;
+  st.customers = makeCustomerPool(CONFIG.maxCustomers);
+  st.warehouse = {};
+  initShelves(st.player); initRivalShelves(st.rival);
+  drawHand(st);
+  const prevUI = syncOverlaysRef, prevSave = saveEnabled;
+  syncOverlaysRef = null; saveEnabled = false;
+  for (let day = 1; day <= 7; day++){
+    st.day = day;
+    startDay(st);
+    let steps = Math.ceil(CONFIG.dayLengthSec/STEP) + 10;
+    while (st.screen === 'day' && steps-- > 0) updateDay(STEP, st);
+    // avond-AI voor speler-strategie
+    const cards = st.eveningCards || [];
+    if (strategy === 'reasonable' || strategy === 'niche' || strategy === 'sabotage'){
+      let prio;
+      if (strategy === 'niche') prio = ['dept','shelfLvl','hire','cashier','automation','loyalty','apeSpeed','sale','flyer'];
+      else if (strategy === 'sabotage') prio = ['hire','shelfLvl','dept','cashier','automation','loyalty','apeSpeed','sale','flyer'];
+      else prio = ['dept','hire','shelfLvl','cashier','automation','loyalty','apeSpeed','sale','flyer'];
+      let chosen = null;
+      for (const id of prio){ const c = cards.find(k=>k.id===id && st.coins>=k.cost); if (c){ chosen=c; break; } }
+      if (chosen && (day>=2 || chosen.cost <= st.coins*0.8)) applyUpgrade(st, chosen);
+      else st.playerLastMove = null;
+      // sabotage-strategie: speel een kaart als beschikbaar/betaalbaar
+      if (strategy === 'sabotage' && st.hand.length){
+        for (let i=0;i<st.hand.length;i++){ const h=st.hand[i]; const cost=h.free?0:sabCost(h.id); if (st.coins>=cost){ playerPlaySabotage(st, i); break; } }
+      }
+    } else { st.playerLastMove = null; }
+    rivalMove(st);
+    st.screen = 'report';
+    // simuleer dagrapport-overgang
+    const snap={}; for (const a of ARCH_IDS) snap[a]=st.player.loyalty[a];
+    if (day >= 7) break;
+  }
+  syncOverlaysRef = prevUI; saveEnabled = prevSave;
+  return { won: st.marketShare>=0.5, share: st.marketShare, coins: st.coins,
+           week: st.week, rival: st.rival.id, depts: st.player.departments.length,
+           rivalEff: st.rival.efficiency };
+}
+function runSelftest(){
+  const seeds = [11,23,42,77,101,202,303,404];
+  const strategies = ['idle','reasonable','niche','sabotage'];
+  const out = { seeds: seeds.length, perWeek: {} };
+  let seasonPlayable = true;
+  for (let wk=1; wk<=5; wk++){
+    out.perWeek[wk] = {};
+    for (const strat of strategies){
+      let wins=0, shareSum=0;
+      for (const s of seeds){ const r = simulateWeek(s, strat, wk); if (r.won) wins++; shareSum+=r.share; }
+      out.perWeek[wk][strat] = { winrate:+(wins/seeds.length).toFixed(2), avgShare:+(shareSum/seeds.length).toFixed(3) };
+    }
+    // campagne-doorloopbaarheid: 'reasonable' moet de week kunnen winnen (>=1 seed)
+    if (out.perWeek[wk].reasonable.winrate <= 0) seasonPlayable = false;
+  }
+  // endless sanity: 2 rondes met oplopende diff
+  out.endless = [];
+  for (let e=0;e<2;e++){ const r = simulateWeek(99+e, 'reasonable', 5, {diff:1+e*0.05}); out.endless.push({won:r.won,share:r.share}); }
+  out.seasonPlayable = seasonPlayable;
+  // distinct rivals: utility-gedrag verschilt (depts vs sabotage) — informatief
+  console.log('[MMR selftest]', JSON.stringify(out));
+  if (typeof document !== 'undefined' && document.getElementById('wrap')){
+    const pre = document.createElement('pre');
+    pre.style.cssText='position:absolute;top:60px;left:10px;color:#7CFC9A;z-index:99;background:rgba(0,0,0,.8);padding:8px;font-size:11px;max-height:560px;overflow:auto;';
+    pre.textContent = 'SELFTEST\n'+JSON.stringify(out,null,2);
+    document.getElementById('wrap').appendChild(pre);
+  }
+  return out;
+}
+
+/* =========================== BOOT ==================================== */
+function bootBrowser(){
+  cv = $('cv'); ctx = cv.getContext('2d');
+  ovTitle=$('ovTitle'); ovSeason=$('ovSeason'); ovSkins=$('ovSkins'); ovWeekIntro=$('ovWeekIntro');
+  ovEvening=$('ovEvening'); ovRival=$('ovRival'); ovReport=$('ovReport'); ovWeekEnd=$('ovWeekEnd');
+  ovAch=$('ovAch');
+  debugHud=$('debugHud'); pauseHint=$('pauseHint'); speedBtn=$('speedBtn'); tipEl=$('tip');
+  syncOverlaysRef = syncOverlays;
+
+  state = freshState();
+  const m = loadMeta(); if (m) applyMeta(state, m);
+  attachPools(state);
+  state.screen = 'title';
+  if (hasSave()){ const test = loadGame(); if (test && test.corruptRecovered) state.corruptRecovered = true; }
+  syncOverlays(state);
+
+  // Fase 4: lazy audio init bij elke user-gesture
+  document.addEventListener('pointerdown', _audioGesture, {passive:true});
+  document.addEventListener('keydown', _audioGesture, {passive:true});
+
+  cv.addEventListener('pointerdown', onPointer);
+  cv.addEventListener('contextmenu', e=>e.preventDefault());
+  // Fase 4: gedelegeerde klik-SFX voor alle DOM-knoppen/tegels zodat geen enkele
+  // (ook dynamisch opgebouwde) knop een stil feedback-moment heeft. Cards/sabcards
+  // hebben hun eigen expliciete sfx.klik() en zijn hier uitgesloten om dubbel
+  // afspelen te voorkomen.
+  document.addEventListener('pointerdown', (e)=>{
+    const t = e.target && e.target.closest ?
+      e.target.closest('.btn,.weekTile,.skinTile,.hatTile,#muteBtn') : null;
+    if (!t) return;
+    if (t.classList.contains('locked') || t.disabled) return;
+    sfx.klik();
+  }, true);
+  $('btnSkinsBack').onclick = ()=>{ state.screen='title'; syncOverlays(state); };
+  { const ab=$('btnAchBack'); if (ab) ab.onclick = ()=>{ state.screen='title'; syncOverlays(state); }; }
+  $('btnIntroGo').onclick = ()=>{ startDay(state); };
+  $('btnSave').onclick = ()=>{ state.playerLastMove=null; rivalMove(state); };
+  $('btnRivalOk').onclick = ()=>{ TypeWriter.skip(); state.screen='report'; syncOverlays(state); };
+  $('btnReportOk').onclick = ()=>{ afterReport(state); };
+
+  window.addEventListener('blur', ()=>{ if (state && state.screen==='day'){ paused=true; pauseHint.style.display='flex'; } });
+  document.addEventListener('visibilitychange', ()=>{ if (document.hidden && state && state.screen==='day'){ paused=true; pauseHint.style.display='flex'; } });
+  pauseHint.addEventListener('pointerdown', ()=>{ paused=false; pauseHint.style.display='none'; });
+
+  if (DEBUG){
+    debugHud.style.display='block'; speedBtn.style.display='block';
+    speedBtn.onclick = ()=>{ simSpeed = simSpeed===1?4:1; speedBtn.textContent = simSpeed===4?'▶ ×1':'⏩ ×4'; };
+  }
+  setupMuteBtn(); // Fase 4 mute knop
+  if (getParam('selftest') === '1') setTimeout(runSelftest, 50);
+  requestAnimationFrame(frame);
+}
+
+if (typeof window !== 'undefined' && typeof document !== 'undefined' && document.getElementById){
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootBrowser);
+  else bootBrowser();
+} else {
+  if (typeof module !== 'undefined' && module.exports){
+    module.exports = { runSelftest, simulateWeek, CONFIG, DATA, mulberry32 };
+  } else if (typeof globalThis !== 'undefined'){
+    globalThis.MMR = { runSelftest, simulateWeek, CONFIG, DATA };
+  }
+}
+
+</script>
+<!-- mmr fase6 deploy 2026-07-02 -->
+</body>
+</html>
